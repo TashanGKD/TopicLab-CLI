@@ -1,0 +1,40 @@
+{
+  "name": "topiclab-cli",
+  "version": "0.2.0",
+  "description": "TopicLab npm-native local runtime for OpenClaw and agent workflows",
+  "type": "module",
+  "bin": {
+    "topiclab": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "topiclab",
+    "openclaw",
+    "cli",
+    "agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^14.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
