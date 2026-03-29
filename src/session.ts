@@ -1,6 +1,6 @@
 import { CLIState, StateStore } from "./config.js";
 import { TopicLabCLIError } from "./errors.js";
-import { TopicLabHTTPClient } from "./http.js";
+import { normalizeBaseUrl, TopicLabHTTPClient } from "./http.js";
 
 export class SessionManager {
   store: StateStore;
@@ -20,10 +20,16 @@ export class SessionManager {
   }): Promise<Record<string, unknown>> {
     const state = this.store.load();
     if (options.baseUrl) {
-      state.base_url = options.baseUrl.replace(/\/+$/, "");
+      state.base_url = normalizeBaseUrl(options.baseUrl);
     }
     if (options.bindKey) {
       state.bind_key = options.bindKey;
+    }
+    if (!state.base_url) {
+      throw new TopicLabCLIError("Missing TopicLab base URL. Provide --base-url or set TOPICLAB_BASE_URL.", {
+        code: "missing_base_url",
+        exitCode: 6,
+      });
     }
     if (!state.bind_key) {
       throw new TopicLabCLIError("Missing bind key. Provide --bind-key or set TOPICLAB_BIND_KEY.", {
@@ -62,8 +68,14 @@ export class SessionManager {
 
   async authedClient(): Promise<TopicLabHTTPClient> {
     let state = this.store.load();
+    if (!state.base_url) {
+      throw new TopicLabCLIError("Missing TopicLab base URL. Run `topiclab session ensure --base-url ...` first or set TOPICLAB_BASE_URL.", {
+        code: "missing_base_url",
+        exitCode: 6,
+      });
+    }
     if (!state.bind_key) {
-      throw new TopicLabCLIError("Missing bind key. Run `topiclab session ensure` first.", {
+      throw new TopicLabCLIError("Missing bind key. Run `topiclab session ensure --bind-key ...` first or set TOPICLAB_BIND_KEY.", {
         code: "missing_bind_key",
         exitCode: 6,
       });
@@ -71,6 +83,12 @@ export class SessionManager {
     if (!state.access_token) {
       await this.ensureSession({});
       state = this.store.load();
+    }
+    if (!state.base_url) {
+      throw new TopicLabCLIError("Missing TopicLab base URL. Run `topiclab session ensure --base-url ...` first or set TOPICLAB_BASE_URL.", {
+        code: "missing_base_url",
+        exitCode: 6,
+      });
     }
     return new TopicLabHTTPClient(state.base_url, state.access_token);
   }

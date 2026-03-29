@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 
 import { StateStore } from "./config.js";
@@ -31,6 +33,52 @@ interface HelpAskOptions extends CommonOptions {
   scene?: string;
   topic?: string;
   contextJson?: string;
+}
+
+interface AppListOptions extends CommonOptions {
+  q?: string;
+  tag?: string;
+}
+
+export const CLI_MODULE_URL = import.meta.url;
+
+function includesQuery(app: Record<string, unknown>, query: string): boolean {
+  const haystacks = [
+    app.id,
+    app.name,
+    app.summary,
+    app.description,
+    Array.isArray(app.tags) ? app.tags.join(" ") : "",
+  ];
+  const normalized = query.trim().toLowerCase();
+  return haystacks.some((value) => String(value ?? "").toLowerCase().includes(normalized));
+}
+
+function filterApps(payload: Record<string, unknown>, options: AppListOptions): Record<string, unknown> {
+  const list = Array.isArray(payload.list) ? payload.list.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item)) : [];
+  let filtered = list;
+
+  if (options.q) {
+    filtered = filtered.filter((item) => includesQuery(item, options.q!));
+  }
+  if (options.tag) {
+    const expected = options.tag.trim().toLowerCase();
+    filtered = filtered.filter((item) =>
+      Array.isArray(item.tags) && item.tags.some((tag) => String(tag).toLowerCase() === expected),
+    );
+  }
+
+  return {
+    ...payload,
+    count: filtered.length,
+    list: filtered,
+    applied_filters: Object.fromEntries(
+      Object.entries({
+        q: options.q,
+        tag: options.tag,
+      }).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+    ),
+  };
 }
 
 function emit(payload: Jsonish, asJson: boolean): number {
@@ -115,6 +163,17 @@ function buildRequirementPayload(options: RequirementOptions): Record<string, un
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null));
 }
 
+function resolveBaseUrl(store: StateStore, override?: string): string {
+  const baseUrl = override?.trim() || store.load().base_url;
+  if (!baseUrl) {
+    throw new TopicLabCLIError("Missing TopicLab base URL. Provide --base-url, run `topiclab session ensure --base-url ...`, or set TOPICLAB_BASE_URL.", {
+      code: "missing_base_url",
+      exitCode: 6,
+    });
+  }
+  return baseUrl;
+}
+
 function buildProgram(session: SessionManager, store: StateStore): Command {
   const program = new Command();
 
@@ -129,11 +188,9 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .option("--force-renew")
     .option("--json")
     .action(async (options: CommonOptions & { baseUrl?: string; bindKey?: string; forceRenew?: boolean }) => {
-      const baseUrl = options.baseUrl ?? process.env.TOPICLAB_BASE_URL;
-      const bindKey = options.bindKey ?? process.env.TOPICLAB_BIND_KEY;
       const payload = await session.ensureSession({
-        baseUrl,
-        bindKey,
+        baseUrl: options.baseUrl,
+        bindKey: options.bindKey,
         forceRenew: options.forceRenew ?? false,
       });
       process.exit(emit(payload, options.json ?? false));
@@ -145,7 +202,7 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .option("--base-url <url>")
     .option("--json")
     .action(async (options: CommonOptions & { baseUrl?: string }) => {
-      const client = new TopicLabHTTPClient(options.baseUrl ?? process.env.TOPICLAB_BASE_URL ?? "http://127.0.0.1:8001");
+      const client = new TopicLabHTTPClient(resolveBaseUrl(store, options.baseUrl));
       const payload = await client.requestJson("GET", "/api/v1/openclaw/cli-manifest");
       process.exit(emit(payload, options.json ?? false));
     });
@@ -156,8 +213,37 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .option("--base-url <url>")
     .option("--json")
     .action(async (options: CommonOptions & { baseUrl?: string }) => {
-      const client = new TopicLabHTTPClient(options.baseUrl ?? process.env.TOPICLAB_BASE_URL ?? "http://127.0.0.1:8001");
+      const client = new TopicLabHTTPClient(resolveBaseUrl(store, options.baseUrl));
       const payload = await client.requestJson("GET", "/api/v1/openclaw/cli-policy-pack");
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  const appsCommand = program.command("apps");
+  appsCommand
+    .command("list")
+    .option("--q <query>")
+    .option("--tag <tag>")
+    .option("--json")
+    .action(async (options: AppListOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", "/api/v1/apps");
+      process.exit(emit(filterApps(payload, options), options.json ?? false));
+    });
+
+  appsCommand
+    .command("get")
+    .argument("<app_id>")
+    .option("--json")
+    .action(async (appId: string, options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", `/api/v1/apps/${appId}`);
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  appsCommand
+    .command("topic")
+    .argument("<app_id>")
+    .option("--json")
+    .action(async (appId: string, options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("POST", `/api/v1/apps/${appId}/topic`);
       process.exit(emit(payload, options.json ?? false));
     });
 
@@ -528,6 +614,17 @@ async function run(): Promise<number> {
   return 0;
 }
 
+export function isDirectEntrypoint(entryArg = process.argv[1]): boolean {
+  if (!entryArg) {
+    return false;
+  }
+  try {
+    return CLI_MODULE_URL === pathToFileURL(fs.realpathSync(entryArg)).href;
+  } catch {
+    return false;
+  }
+}
+
 export async function main(argv = process.argv): Promise<void> {
   process.argv = argv;
   try {
@@ -541,6 +638,6 @@ export async function main(argv = process.argv): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isDirectEntrypoint()) {
   void main();
 }

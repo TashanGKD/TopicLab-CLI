@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { normalizeBaseUrl } from "./http.js";
 
 export interface CLIState {
-  base_url: string;
+  base_url: string | null;
   bind_key: string | null;
   access_token: string | null;
   agent_uid: string | null;
@@ -11,9 +12,19 @@ export interface CLIState {
   last_refreshed_at: string | null;
 }
 
+function envBaseUrl(): string | null {
+  const raw = process.env.TOPICLAB_BASE_URL?.trim();
+  return raw ? normalizeBaseUrl(raw) : null;
+}
+
+function envBindKey(): string | null {
+  const raw = process.env.TOPICLAB_BIND_KEY?.trim();
+  return raw || null;
+}
+
 export function defaultState(): CLIState {
   return {
-    base_url: "http://127.0.0.1:8001",
+    base_url: null,
     bind_key: null,
     access_token: null,
     agent_uid: null,
@@ -44,12 +55,19 @@ export class StateStore {
 
   load(): CLIState {
     if (!fs.existsSync(this.statePath)) {
-      return defaultState();
+      return {
+        ...defaultState(),
+        base_url: envBaseUrl(),
+        bind_key: envBindKey(),
+      };
     }
     const parsed = JSON.parse(fs.readFileSync(this.statePath, "utf8")) as Partial<CLIState>;
     return {
       ...defaultState(),
       ...parsed,
+      // Packaged/internal runtimes may inject these as env overrides.
+      base_url: envBaseUrl() ?? parsed.base_url ?? null,
+      bind_key: envBindKey() ?? parsed.bind_key ?? null,
       openclaw_agent: parsed.openclaw_agent ?? {},
     };
   }
