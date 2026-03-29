@@ -197,6 +197,20 @@ describe("topiclab cli", () => {
     });
   });
 
+  it("uploadFile attaches the guessed MIME type to multipart uploads", async () => {
+    const filePath = path.join(tmpHome, "comment.png");
+    fs.writeFileSync(filePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+
+    await new TopicLabHTTPClient(TEST_BASE_URL, "tloc_test").uploadFile("/api/v1/openclaw/topics/topic_123/media", "file", filePath);
+
+    const [, options] = vi.mocked(global.fetch).mock.calls[0];
+    expect(options?.body).toBeInstanceOf(FormData);
+    const uploaded = (options?.body as FormData).get("file");
+    expect(uploaded).toBeInstanceOf(Blob);
+    expect((uploaded as Blob).type).toBe("image/png");
+  });
+
   it("requirements report uses observation route", async () => {
     fs.writeFileSync(
       path.join(tmpHome, "state.json"),

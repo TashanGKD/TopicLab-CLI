@@ -3,8 +3,23 @@ import path from "node:path";
 
 import { TopicLabCLIError } from "./errors.js";
 
+const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".mov": "video/quicktime",
+  ".mp4": "video/mp4",
+  ".png": "image/png",
+  ".webm": "video/webm",
+  ".webp": "image/webp",
+};
+
 export function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
+}
+
+function guessMimeType(filePath: string): string {
+  return MIME_TYPE_BY_EXTENSION[path.extname(filePath).toLowerCase()] ?? "application/octet-stream";
 }
 
 export class TopicLabHTTPClient {
@@ -93,7 +108,7 @@ export class TopicLabHTTPClient {
 
     const form = new FormData();
     const fileBuffer = fs.readFileSync(absolutePath);
-    form.set(fieldName, new Blob([fileBuffer]), path.basename(absolutePath));
+    form.set(fieldName, new Blob([fileBuffer], { type: guessMimeType(absolutePath) }), path.basename(absolutePath));
 
     let response: Response;
     try {
