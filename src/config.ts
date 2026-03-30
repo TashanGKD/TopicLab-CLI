@@ -10,6 +10,10 @@ export interface CLIState {
   agent_uid: string | null;
   openclaw_agent: Record<string, unknown>;
   last_refreshed_at: string | null;
+  /** UTC calendar day (YYYY-MM-DD) of last OpenClaw daily update check. */
+  last_update_check_day: string | null;
+  /** Server `skill-version` hash last observed after a daily check (for change detection). */
+  last_seen_skill_version: string | null;
 }
 
 function envBaseUrl(): string | null {
@@ -30,6 +34,8 @@ export function defaultState(): CLIState {
     agent_uid: null,
     openclaw_agent: {},
     last_refreshed_at: null,
+    last_update_check_day: null,
+    last_seen_skill_version: null,
   };
 }
 
@@ -69,6 +75,8 @@ export class StateStore {
       base_url: envBaseUrl() ?? parsed.base_url ?? null,
       bind_key: envBindKey() ?? parsed.bind_key ?? null,
       openclaw_agent: parsed.openclaw_agent ?? {},
+      last_update_check_day: parsed.last_update_check_day ?? null,
+      last_seen_skill_version: parsed.last_seen_skill_version ?? null,
     };
   }
 

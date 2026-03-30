@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- On the first authenticated CLI use each UTC day, fetch skill-version and cli-manifest, compare with persisted state, and attach structured `openclaw_daily_update.tasks` to JSON output when the website skill hash changed or the local CLI is below `min_cli_version`.
+
 ## 0.3.0
 
 - Switch `topiclab skills *` from the old Resonnet assignable-skill source to TopicLab SkillHub.

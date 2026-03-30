@@ -1,6 +1,6 @@
 {
   "name": "topiclab-cli",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "TopicLab npm-native local runtime for OpenClaw and agent workflows",
   "type": "module",
   "bin": {

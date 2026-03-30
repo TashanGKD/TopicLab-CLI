@@ -22,7 +22,7 @@ function jsonResponse(payload: unknown, init?: ResponseInit): Response {
   });
 }
 
-function writeState(tmpHome: string): void {
+function writeState(tmpHome: string, overrides: Record<string, unknown> = {}): void {
   fs.writeFileSync(
     path.join(tmpHome, "state.json"),
     JSON.stringify(
@@ -33,6 +33,9 @@ function writeState(tmpHome: string): void {
         agent_uid: "oc_123",
         openclaw_agent: {},
         last_refreshed_at: "2026-03-27T00:00:00+00:00",
+        last_update_check_day: new Date().toISOString().slice(0, 10),
+        last_seen_skill_version: "test_last_seen_skill_version",
+        ...overrides,
       },
       null,
       2,
@@ -68,13 +71,24 @@ describe("topiclab cli", () => {
   });
 
   it("session ensure bootstraps and persists state", async () => {
-    global.fetch = vi.fn().mockResolvedValue(
-      jsonResponse({
-        access_token: "tloc_test",
-        agent_uid: "oc_123",
-        openclaw_agent: { handle: "cli-user" },
-      }),
-    );
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: { handle: "cli-user" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          version: "abc123",
+          updated_at: "2026-03-01T00:00:00Z",
+          skill_url: "/api/v1/openclaw/skill.md",
+          check_url: "/api/v1/openclaw/skill-version",
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ min_cli_version: "0.1.0" }));
 
     const payload = await new SessionManager().ensureSession({
       baseUrl: TEST_BASE_URL,
@@ -114,21 +128,7 @@ describe("topiclab cli", () => {
   });
 
   it("apps list filters by query locally", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
@@ -153,21 +153,7 @@ describe("topiclab cli", () => {
   });
 
   it("apps topic bootstraps an app discussion topic", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
@@ -182,21 +168,7 @@ describe("topiclab cli", () => {
   });
 
   it("skills list returns skill hub skills from backend", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
@@ -259,21 +231,7 @@ describe("topiclab cli", () => {
   });
 
   it("skills get uses the detail endpoint", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
@@ -299,21 +257,7 @@ describe("topiclab cli", () => {
   });
 
   it("skills content uses the content endpoint", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
@@ -341,21 +285,7 @@ describe("topiclab cli", () => {
   });
 
   it("skills install writes to explicit workspace dir", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
     fs.mkdirSync(tmpWorkspace, { recursive: true });
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
@@ -399,21 +329,7 @@ describe("topiclab cli", () => {
   });
 
   it("skills install infers workspace from cwd markers", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     fs.writeFileSync(path.join(tmpWorkspace, "USER.md"), "# user\n");
     const nestedDir = path.join(tmpWorkspace, "notes", "daily");
@@ -442,21 +358,7 @@ describe("topiclab cli", () => {
   });
 
   it("skills install fails when workspace cannot be inferred", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
     process.chdir(tmpWorkspace);
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
@@ -477,21 +379,7 @@ describe("topiclab cli", () => {
   });
 
   it("skills install requires --force to overwrite", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     fs.writeFileSync(path.join(tmpWorkspace, "USER.md"), "# user\n");
     const installedDir = path.join(tmpWorkspace, ".claude", "skills", "research-dream");
@@ -845,21 +733,7 @@ describe("topiclab cli", () => {
   });
 
   it("notifications list uses inbox route", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
@@ -898,21 +772,7 @@ describe("topiclab cli", () => {
   });
 
   it("requirements report uses observation route", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: { handle: "cli-user" },
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome, { openclaw_agent: { handle: "cli-user" } });
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
@@ -958,21 +818,7 @@ describe("topiclab cli", () => {
   });
 
   it("invalid normalized json exits nonzero", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome);
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);
@@ -1006,21 +852,10 @@ describe("topiclab cli", () => {
   });
 
   it("renews on 401 and retries once", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "expired_token",
-          agent_uid: "oc_123",
-          openclaw_agent: {},
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome, {
+      access_token: "expired_token",
+      last_update_check_day: new Date().toISOString().slice(0, 10),
+    });
 
     global.fetch = vi
       .fn()
@@ -1035,21 +870,7 @@ describe("topiclab cli", () => {
   });
 
   it("help ask returns website skill refresh guidance", async () => {
-    fs.writeFileSync(
-      path.join(tmpHome, "state.json"),
-      JSON.stringify(
-        {
-          base_url: TEST_BASE_URL,
-          bind_key: TEST_BIND_KEY,
-          access_token: "tloc_test",
-          agent_uid: "oc_123",
-          openclaw_agent: { handle: "cli-user" },
-          last_refreshed_at: "2026-03-27T00:00:00+00:00",
-        },
-        null,
-        2,
-      ),
-    );
+    writeState(tmpHome, { openclaw_agent: { handle: "cli-user" } });
 
     const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`exit:${code ?? 0}`);

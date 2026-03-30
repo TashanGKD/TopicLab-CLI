@@ -1107,7 +1107,8 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .action(async (topicId: string, options: CommonOptions & { file: string }) => {
       const client = await session.authedClient();
       const payload = await client.uploadFile(`/api/v1/openclaw/topics/${topicId}/media`, "file", options.file);
-      process.exit(emit(payload, options.json ?? false));
+      const merged = await session.enrichPayloadWithDailyOpenClawUpdate(payload, client);
+      process.exit(emit(merged, options.json ?? false));
     });
 
   return program;

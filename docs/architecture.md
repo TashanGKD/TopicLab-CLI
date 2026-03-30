@@ -17,5 +17,6 @@ Additional semantic surfaces:
 - `notifications ...` maps the current inbox-backed notification flow into a stable CLI namespace
 - `apps ...` exposes TopicLab's app catalog so agents can discover relevant tools before falling back to generic reasoning
 - `help ask ...` defaults to a backend-guided skill refresh response, so agents can reload the latest website skill before continuing
+- once per UTC day, authenticated JSON responses may include `openclaw_daily_update` after comparing `skill-version` + `cli-manifest` with `state.json`
 
 When integrated into the main TopicLab repository, `topiclab-cli` is consumed as a git submodule and built into an optional Docker runner. The runner is used for protocol smoke tests against `topiclab-backend` over the Compose network.

@@ -1,4 +1,5 @@
 import { CLIState, StateStore } from "./config.js";
+import { attachOpenClawDailyUpdateNotice, runDailyOpenClawUpdateCheck } from "./dailyUpdateCheck.js";
 import { TopicLabCLIError } from "./errors.js";
 import { normalizeBaseUrl, TopicLabHTTPClient, TopicLabJSON } from "./http.js";
 
@@ -11,6 +12,11 @@ export class SessionManager {
 
   loadState(): CLIState {
     return this.store.load();
+  }
+
+  async enrichPayloadWithDailyOpenClawUpdate(payload: TopicLabJSON, client: TopicLabHTTPClient): Promise<TopicLabJSON> {
+    const notice = await runDailyOpenClawUpdateCheck(this.store, client);
+    return attachOpenClawDailyUpdateNotice(payload, notice);
   }
 
   async ensureSession(options: {
@@ -38,13 +44,13 @@ export class SessionManager {
       });
     }
 
-    const client = new TopicLabHTTPClient(state.base_url);
+    const publicClient = new TopicLabHTTPClient(state.base_url);
     const payload = (
       options.forceRenew || state.access_token
-        ? await client.requestJson("POST", "/api/v1/openclaw/session/renew", {
+        ? await publicClient.requestJson("POST", "/api/v1/openclaw/session/renew", {
             headers: { Authorization: `Bearer ${state.bind_key}` },
           })
-        : await client.requestJson("GET", "/api/v1/openclaw/bootstrap", {
+        : await publicClient.requestJson("GET", "/api/v1/openclaw/bootstrap", {
             params: { key: state.bind_key },
           })
     ) as Record<string, unknown>;
@@ -58,13 +64,15 @@ export class SessionManager {
     state.last_refreshed_at = new Date().toISOString();
     this.store.save(state);
 
-    return {
+    const authedHttp = new TopicLabHTTPClient(state.base_url, state.access_token);
+    const basePayload: Record<string, unknown> = {
       ok: true,
       base_url: state.base_url,
       agent_uid: state.agent_uid,
       openclaw_agent: state.openclaw_agent,
       last_refreshed_at: state.last_refreshed_at,
     };
+    return (await this.enrichPayloadWithDailyOpenClawUpdate(basePayload, authedHttp)) as Record<string, unknown>;
   }
 
   async authedClient(): Promise<TopicLabHTTPClient> {
@@ -104,7 +112,8 @@ export class SessionManager {
   ): Promise<TopicLabJSON> {
     try {
       const client = await this.authedClient();
-      return await client.requestJson(method, requestPath, options);
+      const payload = await client.requestJson(method, requestPath, options);
+      return await this.enrichPayloadWithDailyOpenClawUpdate(payload, client);
     } catch (error) {
       if (!(error instanceof TopicLabCLIError) || error.statusCode !== 401) {
         throw error;
@@ -112,7 +121,8 @@ export class SessionManager {
     }
     await this.ensureSession({ forceRenew: true });
     const client = await this.authedClient();
-    return client.requestJson(method, requestPath, options);
+    const payload = await client.requestJson(method, requestPath, options);
+    return await this.enrichPayloadWithDailyOpenClawUpdate(payload, client);
   }
 
   async requestFormWithAutoRenew(
@@ -127,7 +137,8 @@ export class SessionManager {
   ): Promise<TopicLabJSON> {
     try {
       const client = await this.authedClient();
-      return await client.requestForm(method, requestPath, options);
+      const payload = await client.requestForm(method, requestPath, options);
+      return await this.enrichPayloadWithDailyOpenClawUpdate(payload, client);
     } catch (error) {
       if (!(error instanceof TopicLabCLIError) || error.statusCode !== 401) {
         throw error;
@@ -135,7 +146,8 @@ export class SessionManager {
     }
     await this.ensureSession({ forceRenew: true });
     const client = await this.authedClient();
-    return client.requestForm(method, requestPath, options);
+    const payload = await client.requestForm(method, requestPath, options);
+    return await this.enrichPayloadWithDailyOpenClawUpdate(payload, client);
   }
 
   async downloadBinaryWithAutoRenew(
