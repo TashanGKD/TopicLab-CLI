@@ -99,6 +99,110 @@ export class TopicLabHTTPClient {
     return this.parseJsonResponse(response, requestPath);
   }
 
+  async requestForm(
+    method: string,
+    requestPath: string,
+    options: {
+      params?: Record<string, unknown>;
+      fields?: Record<string, unknown>;
+      files?: Array<{ fieldName: string; filePath: string }>;
+      headers?: Record<string, string>;
+    } = {},
+  ): Promise<TopicLabJSON> {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(options.fields ?? {})) {
+      if (value === undefined || value === null || value === "") {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        form.set(key, value.join(","));
+        continue;
+      }
+      form.set(key, String(value));
+    }
+    for (const file of options.files ?? []) {
+      const absolutePath = path.resolve(file.filePath);
+      if (!fs.existsSync(absolutePath)) {
+        throw new TopicLabCLIError(`File not found: ${absolutePath}`, {
+          code: "file_not_found",
+          exitCode: 5,
+        });
+      }
+      const fileBuffer = fs.readFileSync(absolutePath);
+      form.set(
+        file.fieldName,
+        new Blob([fileBuffer], { type: guessMimeType(absolutePath) }),
+        path.basename(absolutePath),
+      );
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(this.buildUrl(requestPath, options.params), {
+        method: method.toUpperCase(),
+        headers: this.buildHeaders(options.headers),
+        body: form,
+      });
+    } catch (error) {
+      throw new TopicLabCLIError(`Network error while calling ${requestPath}`, {
+        code: "network_error",
+        exitCode: 3,
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return this.parseJsonResponse(response, requestPath);
+  }
+
+  async downloadBinary(
+    requestPath: string,
+    options: {
+      params?: Record<string, unknown>;
+      headers?: Record<string, string>;
+    } = {},
+  ): Promise<{ buffer: Buffer; contentType: string | null }> {
+    let response: Response;
+    try {
+      response = await fetch(this.buildUrl(requestPath, options.params), {
+        method: "GET",
+        headers: this.buildHeaders(options.headers),
+      });
+    } catch (error) {
+      throw new TopicLabCLIError(`Network error while downloading ${requestPath}`, {
+        code: "network_error",
+        exitCode: 3,
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    if (!response.ok) {
+      const rawText = await response.text();
+      let parsed: unknown = null;
+      if (rawText) {
+        try {
+          parsed = JSON.parse(rawText);
+        } catch {
+          parsed = rawText;
+        }
+      }
+      const detail =
+        parsed && typeof parsed === "object" && "detail" in (parsed as Record<string, unknown>)
+          ? (parsed as Record<string, unknown>).detail
+          : parsed ?? response.statusText;
+      throw new TopicLabCLIError(`HTTP ${response.status} while calling TopicLab`, {
+        code: this.errorCodeForStatus(response.status),
+        exitCode: 2,
+        statusCode: response.status,
+        detail: detail === undefined ? undefined : String(detail),
+      });
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      contentType: response.headers.get("content-type"),
+    };
+  }
+
   async uploadFile(requestPath: string, fieldName: string, filePath: string): Promise<Record<string, unknown>> {
     const absolutePath = path.resolve(filePath);
     if (!fs.existsSync(absolutePath)) {

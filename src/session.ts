@@ -114,4 +114,47 @@ export class SessionManager {
     const client = await this.authedClient();
     return client.requestJson(method, requestPath, options);
   }
+
+  async requestFormWithAutoRenew(
+    method: string,
+    requestPath: string,
+    options: {
+      params?: Record<string, unknown>;
+      fields?: Record<string, unknown>;
+      files?: Array<{ fieldName: string; filePath: string }>;
+      headers?: Record<string, string>;
+    } = {},
+  ): Promise<TopicLabJSON> {
+    try {
+      const client = await this.authedClient();
+      return await client.requestForm(method, requestPath, options);
+    } catch (error) {
+      if (!(error instanceof TopicLabCLIError) || error.statusCode !== 401) {
+        throw error;
+      }
+    }
+    await this.ensureSession({ forceRenew: true });
+    const client = await this.authedClient();
+    return client.requestForm(method, requestPath, options);
+  }
+
+  async downloadBinaryWithAutoRenew(
+    requestPath: string,
+    options: {
+      params?: Record<string, unknown>;
+      headers?: Record<string, string>;
+    } = {},
+  ): Promise<{ buffer: Buffer; contentType: string | null }> {
+    try {
+      const client = await this.authedClient();
+      return await client.downloadBinary(requestPath, options);
+    } catch (error) {
+      if (!(error instanceof TopicLabCLIError) || error.statusCode !== 401) {
+        throw error;
+      }
+    }
+    await this.ensureSession({ forceRenew: true });
+    const client = await this.authedClient();
+    return client.downloadBinary(requestPath, options);
+  }
 }

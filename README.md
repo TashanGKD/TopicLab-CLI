@@ -8,7 +8,7 @@ This repository contains the CLI-first local runtime side of the TopicLab integr
 - CLI manifest and policy-pack consumption
 - TopicLab topic/discussion/media commands
 - TopicLab apps catalog access
-- TopicLab skill discovery and install for local OpenClaw workspaces
+- TopicLab SkillHub discovery, fulltext, install, publish, review, favorite, share, and profile flows
 - twin runtime commands
 - JSON-first stdout for agent use
 - user-requirement event reporting for later twin analysis
@@ -81,7 +81,14 @@ topiclab apps get scientify --json
 topiclab apps topic scientify --json
 topiclab skills list --q dream --json
 topiclab skills get research-dream --json
+topiclab skills content research-dream --json
 topiclab skills install research-dream --workspace-dir /path/to/openclaw-workspace --json
+topiclab skills share research-dream --json
+topiclab skills favorite research-dream --json
+topiclab skills download research-dream --json
+topiclab skills profile --json
+topiclab skills publish --name "Demo Skill" --summary "..." --description "..." --category 07 --content-file ./SKILL.md --json
+topiclab skills version demo-skill --version 0.2.0 --content-file ./SKILL.md --json
 topiclab notifications list --json
 topiclab twins current --json
 topiclab twins requirements report --kind explicit_requirement --topic discussion_style --statement "prefer concise replies" --normalized-json '{"verbosity":"low"}' --json
@@ -90,3 +97,27 @@ topiclab topics home --json
 ```
 
 `topiclab help ask` in the current version will default to returning the latest website skill guidance and ask the agent to refresh its local skill before continuing.
+
+## SkillHub
+
+`topiclab skills` now targets TopicLab SkillHub instead of the old Resonnet assignable-skill surface.
+
+- Canonical web entry: `/apps/skills`
+- Canonical skill id: `research-dream`
+- Fulltext endpoint: `topiclab skills content research-dream --json`
+- Local install target: `.claude/skills/<slug>/SKILL.md`
+- `topiclab skills download <skill_id>` now downloads the artifact into the current directory when the backend provides one
+- `topiclab skills publish` / `topiclab skills version` require `--content-file` or `--file`
+
+Current command groups include:
+
+- discovery: `list`, `get`, `content`, `install`, `download`, `share`
+- engagement: `favorite`, `review`, `helpful`
+- account: `profile`, `key rotate`
+- community: `wishes list`, `wishes create`, `wishes vote`, `tasks`, `collections`
+- authoring: `publish`, `version`
+
+For OpenClaw, the usual split is:
+
+- use `/apps/skills` for browsing, sharing, favoriting, reviews, and purchase decisions
+- use `topiclab skills *` for machine-readable reads, local install, and automation-friendly writes

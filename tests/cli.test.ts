@@ -22,6 +22,24 @@ function jsonResponse(payload: unknown, init?: ResponseInit): Response {
   });
 }
 
+function writeState(tmpHome: string): void {
+  fs.writeFileSync(
+    path.join(tmpHome, "state.json"),
+    JSON.stringify(
+      {
+        base_url: TEST_BASE_URL,
+        bind_key: TEST_BIND_KEY,
+        access_token: "tloc_test",
+        agent_uid: "oc_123",
+        openclaw_agent: {},
+        last_refreshed_at: "2026-03-27T00:00:00+00:00",
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 describe("topiclab cli", () => {
   let tmpHome: string;
   let tmpWorkspace: string;
@@ -493,6 +511,304 @@ describe("topiclab cli", () => {
 
     expect(fs.readFileSync(path.join(installedDir, "SKILL.md"), "utf8")).toContain("forced");
     expect(JSON.parse(stdout)).toMatchObject({ overwritten: true });
+  });
+
+  it("skills share prints canonical share url", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+
+    await expect(main(["node", "topiclab", "skills", "share", "research-dream", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(JSON.parse(stdout)).toMatchObject({
+      skill_id: "research-dream",
+      share_url: `${TEST_BASE_URL}/apps/skills/share?skill=research-dream`,
+    });
+  });
+
+  it("skills favorite uses skill hub endpoint", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ skill_id: 1, favorited: true, total_favorites: 3 }));
+
+    await expect(main(["node", "topiclab", "skills", "favorite", "research-dream", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${TEST_BASE_URL}/api/v1/skill-hub/skills/research-dream/favorite?enabled=true`,
+      expect.anything(),
+    );
+    expect(JSON.parse(stdout)).toMatchObject({ favorited: true });
+  });
+
+  it("skills review posts structured review to skill hub", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ id: 99, rating: 5, content: "excellent skill" }));
+
+    await expect(
+      main(["node", "topiclab", "skills", "review", "research-dream", "--rating", "5", "--content", "excellent skill", "--json"]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/api/v1/skill-hub/reviews`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ id: 99 });
+  });
+
+  it("skills helpful posts toggle to review endpoint", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ review_id: 99, helpful_count: 2, enabled: true }));
+
+    await expect(main(["node", "topiclab", "skills", "helpful", "99", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/api/v1/skill-hub/reviews/99/helpful`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ helpful_count: 2, enabled: true });
+  });
+
+  it("skills download stores artifact locally when download_url is present", async () => {
+    writeState(tmpHome);
+    const outputDir = path.join(tmpWorkspace, "downloads");
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          skill_id: 7,
+          version: "0.2.0",
+          artifact_filename: "docker-smoke-skill.zip",
+          download_url: "/api/v1/skill-hub/assets/42",
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3, 4]), {
+          status: 200,
+          headers: { "content-type": "application/zip" },
+        }),
+      );
+
+    await expect(
+      main(["node", "topiclab", "skills", "download", "docker-smoke-skill", "--output-dir", outputDir, "--json"]),
+    ).rejects.toThrow("exit:0");
+
+    const downloadedPath = path.join(outputDir, "docker-smoke-skill.zip");
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(fs.existsSync(downloadedPath)).toBe(true);
+    expect(fs.readFileSync(downloadedPath)).toEqual(Buffer.from([1, 2, 3, 4]));
+    expect(JSON.parse(stdout)).toMatchObject({
+      download_url: "/api/v1/skill-hub/assets/42",
+      downloaded_path: downloadedPath,
+      downloaded_bytes: 4,
+    });
+  });
+
+  it("skills profile and key rotate use profile endpoints", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ has_agent: true, my_skills: [] }))
+      .mockResolvedValueOnce(jsonResponse({ key: "tlos_rotated" }));
+
+    await expect(main(["node", "topiclab", "skills", "profile", "--json"])).rejects.toThrow("exit:0");
+    expect(JSON.parse(stdout)).toMatchObject({ has_agent: true });
+
+    stdout = "";
+    await expect(main(["node", "topiclab", "skills", "key", "rotate", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenNthCalledWith(1, `${TEST_BASE_URL}/api/v1/skill-hub/profile`, expect.anything());
+    expect(global.fetch).toHaveBeenNthCalledWith(2, `${TEST_BASE_URL}/api/v1/skill-hub/profile/openclaw-key`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ key: "tlos_rotated" });
+  });
+
+  it("skills publish posts multipart form to skill hub", async () => {
+    writeState(tmpHome);
+    const contentPath = path.join(tmpHome, "skill.md");
+    fs.writeFileSync(contentPath, "# Demo Skill\n");
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ id: 7, slug: "demo-skill", name: "Demo Skill" }));
+
+    await expect(
+      main([
+        "node",
+        "topiclab",
+        "skills",
+        "publish",
+        "--name",
+        "Demo Skill",
+        "--summary",
+        "demo summary",
+        "--description",
+        "demo description",
+        "--category",
+        "07",
+        "--content-file",
+        contentPath,
+        "--json",
+      ]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/api/v1/skill-hub/skills`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ slug: "demo-skill" });
+  });
+
+  it("skills publish requires content-file or file", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+
+    await expect(
+      main([
+        "node",
+        "topiclab",
+        "skills",
+        "publish",
+        "--name",
+        "Demo Skill",
+        "--summary",
+        "demo summary",
+        "--description",
+        "demo description",
+        "--category",
+        "07",
+        "--json",
+      ]),
+    ).rejects.toThrow("exit:2");
+
+    expect(exitMock).toHaveBeenCalledWith(2);
+    expect(JSON.parse(stdout)).toMatchObject({ error: { code: "missing_skill_payload" } });
+  });
+
+  it("skills version posts multipart form to skill hub", async () => {
+    writeState(tmpHome);
+    const contentPath = path.join(tmpHome, "skill-version.md");
+    fs.writeFileSync(contentPath, "# Demo Skill v2\n");
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ id: 7, slug: "demo-skill", latest_version: "0.2.0" }));
+
+    await expect(
+      main([
+        "node",
+        "topiclab",
+        "skills",
+        "version",
+        "demo-skill",
+        "--version",
+        "0.2.0",
+        "--content-file",
+        contentPath,
+        "--json",
+      ]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/api/v1/skill-hub/skills/demo-skill/versions`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ latest_version: "0.2.0" });
+  });
+
+  it("skills version requires content-file or file", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+
+    await expect(
+      main(["node", "topiclab", "skills", "version", "demo-skill", "--version", "0.2.0", "--json"]),
+    ).rejects.toThrow("exit:2");
+
+    expect(exitMock).toHaveBeenCalledWith(2);
+    expect(JSON.parse(stdout)).toMatchObject({ error: { code: "missing_skill_payload" } });
+  });
+
+  it("skills wishes create posts to skill hub", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ id: 3, title: "Need a new skill" }));
+
+    await expect(
+      main([
+        "node",
+        "topiclab",
+        "skills",
+        "wishes",
+        "create",
+        "--title",
+        "Need a new skill",
+        "--content",
+        "please build it",
+        "--json",
+      ]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/api/v1/skill-hub/wishes`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ id: 3 });
+  });
+
+  it("skills wishes list and vote use skill hub endpoints", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ list: [{ id: 3, title: "Need a new skill" }] }))
+      .mockResolvedValueOnce(jsonResponse({ wish_id: 3, votes_count: 1, enabled: true }));
+
+    await expect(main(["node", "topiclab", "skills", "wishes", "list", "--json"])).rejects.toThrow("exit:0");
+    expect(JSON.parse(stdout)).toMatchObject({ list: [{ id: 3 }] });
+
+    stdout = "";
+    await expect(main(["node", "topiclab", "skills", "wishes", "vote", "3", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenNthCalledWith(1, `${TEST_BASE_URL}/api/v1/skill-hub/wishes`, expect.anything());
+    expect(global.fetch).toHaveBeenNthCalledWith(2, `${TEST_BASE_URL}/api/v1/skill-hub/wishes/3/vote`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ votes_count: 1, enabled: true });
+  });
+
+  it("skills tasks and collections read community surfaces", async () => {
+    writeState(tmpHome);
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ tasks: [{ task_key: "publish_first_skill" }] }))
+      .mockResolvedValueOnce(jsonResponse({ list: [{ slug: "openclaw-starters" }] }));
+
+    await expect(main(["node", "topiclab", "skills", "tasks", "--json"])).rejects.toThrow("exit:0");
+    expect(JSON.parse(stdout)).toMatchObject({ tasks: [{ task_key: "publish_first_skill" }] });
+
+    stdout = "";
+    await expect(main(["node", "topiclab", "skills", "collections", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenNthCalledWith(1, `${TEST_BASE_URL}/api/v1/skill-hub/tasks`, expect.anything());
+    expect(global.fetch).toHaveBeenNthCalledWith(2, `${TEST_BASE_URL}/api/v1/skill-hub/collections`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ list: [{ slug: "openclaw-starters" }] });
   });
 
   it("notifications list uses inbox route", async () => {

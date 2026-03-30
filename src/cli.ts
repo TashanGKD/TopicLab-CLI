@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 
@@ -46,6 +47,41 @@ interface SkillListOptions extends CommonOptions {
   category?: string;
   limit?: string;
   offset?: string;
+}
+
+function parseCsvList(raw?: string): string[] | undefined {
+  if (!raw?.trim()) {
+    return undefined;
+  }
+  const items = raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : undefined;
+}
+
+function readUtf8File(filePath?: string): string | undefined {
+  if (!filePath) {
+    return undefined;
+  }
+  return fs.readFileSync(filePath, "utf8");
+}
+
+function sanitizeArtifactName(fileName: string): string {
+  const trimmed = fileName.trim();
+  const basename = path.basename(trimmed || "skill-artifact.bin");
+  const sanitized = basename.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return sanitized || "skill-artifact.bin";
+}
+
+function outputPathForDownloadedSkill(options: {
+  outputDir?: string;
+  artifactName?: string;
+  fallbackName: string;
+}): string {
+  const targetDir = path.resolve(options.outputDir ?? process.cwd());
+  fs.mkdirSync(targetDir, { recursive: true });
+  return path.join(targetDir, sanitizeArtifactName(options.artifactName ?? options.fallbackName));
 }
 
 export const CLI_MODULE_URL = import.meta.url;
@@ -357,6 +393,338 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
         ),
       );
     });
+
+  skillsCommand
+    .command("share")
+    .argument("<skill_id>")
+    .option("--json")
+    .action(async (skillId: string, options: CommonOptions) => {
+      const baseUrl = resolveBaseUrl(store);
+      const canonical = skillId.trim();
+      process.exit(
+        emit(
+          {
+            ok: true,
+            skill_id: canonical,
+            share_url: `${baseUrl}/apps/skills/share?skill=${encodeURIComponent(canonical)}`,
+            detail_url: `${baseUrl}/apps/skills/${encodeURIComponent(canonical)}`,
+          },
+          options.json ?? false,
+        ),
+      );
+    });
+
+  skillsCommand
+    .command("favorite")
+    .argument("<skill_id>")
+    .option("--disable")
+    .option("--json")
+    .action(async (skillId: string, options: CommonOptions & { disable?: boolean }) => {
+      const payload = await session.requestWithAutoRenew(
+        "POST",
+        `/api/v1/skill-hub/skills/${encodePathSegment(skillId.trim())}/favorite`,
+        {
+          params: { enabled: options.disable ? "false" : "true" },
+        },
+      );
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("download")
+    .argument("<skill_id>")
+    .option("--referrer <source>")
+    .option("--output-dir <path>")
+    .option("--json")
+    .action(async (skillId: string, options: CommonOptions & { referrer?: string; outputDir?: string }) => {
+      const payload = await session.requestWithAutoRenew(
+        "GET",
+        `/api/v1/skill-hub/skills/${encodePathSegment(skillId.trim())}/download`,
+        {
+          params: { referrer: options.referrer },
+        },
+      );
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new TopicLabCLIError("Expected skill download object", {
+          code: "invalid_skill_download",
+          exitCode: 4,
+        });
+      }
+      const result = { ...payload } as Record<string, unknown>;
+      const downloadUrl = typeof result.download_url === "string" ? result.download_url.trim() : "";
+      if (downloadUrl) {
+        const requestPath = downloadUrl.startsWith("http")
+          ? new URL(downloadUrl).pathname + new URL(downloadUrl).search
+          : downloadUrl;
+        const fallbackName = `${skillId.trim()}-${String(result.version ?? "artifact")}.bin`;
+        const downloadedPath = outputPathForDownloadedSkill({
+          outputDir: options.outputDir,
+          artifactName: typeof result.artifact_filename === "string" ? result.artifact_filename : undefined,
+          fallbackName,
+        });
+        const binary = await session.downloadBinaryWithAutoRenew(requestPath);
+        fs.writeFileSync(downloadedPath, binary.buffer);
+        result.downloaded_path = downloadedPath;
+        result.downloaded_bytes = binary.buffer.length;
+        result.downloaded_content_type = binary.contentType;
+      }
+      process.exit(emit(result, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("review")
+    .argument("<skill_id>")
+    .requiredOption("--rating <number>")
+    .requiredOption("--content <text>")
+    .option("--model <name>")
+    .option("--title <text>")
+    .option("--pros <items>")
+    .option("--cons <items>")
+    .option("--json")
+    .action(
+      async (
+        skillId: string,
+        options: CommonOptions & {
+          rating: string;
+          content: string;
+          model?: string;
+          title?: string;
+          pros?: string;
+          cons?: string;
+        },
+      ) => {
+        const payload = await session.requestWithAutoRenew("POST", "/api/v1/skill-hub/reviews", {
+          jsonBody: {
+            skill_id: skillId.trim(),
+            rating: Number(options.rating),
+            content: options.content,
+            model: options.model,
+            title: options.title,
+            pros: parseCsvList(options.pros),
+            cons: parseCsvList(options.cons),
+          },
+        });
+        process.exit(emit(payload, options.json ?? false));
+      },
+    );
+
+  skillsCommand
+    .command("helpful")
+    .argument("<review_id>")
+    .option("--disable")
+    .option("--json")
+    .action(async (reviewId: string, options: CommonOptions & { disable?: boolean }) => {
+      const payload = await session.requestWithAutoRenew("POST", `/api/v1/skill-hub/reviews/${encodePathSegment(reviewId)}/helpful`, {
+        jsonBody: { enabled: !options.disable },
+      });
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("profile")
+    .option("--json")
+    .action(async (options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", "/api/v1/skill-hub/profile");
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  const skillsKey = skillsCommand.command("key");
+  skillsKey
+    .command("rotate")
+    .option("--json")
+    .action(async (options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("POST", "/api/v1/skill-hub/profile/openclaw-key");
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  const skillWishes = skillsCommand.command("wishes");
+  skillWishes
+    .command("list")
+    .option("--limit <number>")
+    .option("--json")
+    .action(async (options: CommonOptions & { limit?: string }) => {
+      const payload = await session.requestWithAutoRenew("GET", "/api/v1/skill-hub/wishes", {
+        params: { limit: options.limit === undefined ? undefined : Number(options.limit) },
+      });
+      process.exit(emit(payload, options.json ?? false));
+    });
+  skillWishes
+    .command("create")
+    .requiredOption("--title <text>")
+    .requiredOption("--content <text>")
+    .option("--category <key>")
+    .option("--json")
+    .action(async (options: CommonOptions & { title: string; content: string; category?: string }) => {
+      const payload = await session.requestWithAutoRenew("POST", "/api/v1/skill-hub/wishes", {
+        jsonBody: {
+          title: options.title,
+          content: options.content,
+          category_key: options.category,
+        },
+      });
+      process.exit(emit(payload, options.json ?? false));
+    });
+  skillWishes
+    .command("vote")
+    .argument("<wish_id>")
+    .option("--disable")
+    .option("--json")
+    .action(async (wishId: string, options: CommonOptions & { disable?: boolean }) => {
+      const payload = await session.requestWithAutoRenew("POST", `/api/v1/skill-hub/wishes/${encodePathSegment(wishId)}/vote`, {
+        jsonBody: { enabled: !options.disable },
+      });
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("tasks")
+    .option("--json")
+    .action(async (options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", "/api/v1/skill-hub/tasks");
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("collections")
+    .option("--json")
+    .action(async (options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", "/api/v1/skill-hub/collections");
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("publish")
+    .requiredOption("--name <text>")
+    .requiredOption("--summary <text>")
+    .requiredOption("--description <text>")
+    .requiredOption("--category <key>")
+    .option("--cluster <key>", "cluster key", "general")
+    .option("--tagline <text>")
+    .option("--slug <slug>")
+    .option("--tags <items>")
+    .option("--capabilities <items>")
+    .option("--framework <name>", "framework", "openclaw")
+    .option("--compatibility-level <level>", "compatibility level", "metadata")
+    .option("--pricing-status <status>", "pricing status", "free")
+    .option("--price-points <number>")
+    .option("--install-command <text>")
+    .option("--source-url <url>")
+    .option("--source-name <text>")
+    .option("--docs-url <url>")
+    .option("--license <text>")
+    .option("--hero-note <text>")
+    .option("--version <text>", "version", "0.1.0")
+    .option("--changelog <text>")
+    .option("--content-file <path>")
+    .option("--file <path>")
+    .option("--json")
+    .action(
+      async (
+        options: CommonOptions & {
+          name: string;
+          summary: string;
+          description: string;
+          category: string;
+          cluster?: string;
+          tagline?: string;
+          slug?: string;
+          tags?: string;
+          capabilities?: string;
+          framework?: string;
+          compatibilityLevel?: string;
+          pricingStatus?: string;
+          pricePoints?: string;
+          installCommand?: string;
+          sourceUrl?: string;
+          sourceName?: string;
+          docsUrl?: string;
+          license?: string;
+          heroNote?: string;
+          version?: string;
+          changelog?: string;
+          contentFile?: string;
+          file?: string;
+        },
+      ) => {
+        if (!options.contentFile && !options.file) {
+          throw new TopicLabCLIError("skills publish requires --content-file or --file", {
+            code: "missing_skill_payload",
+            exitCode: 2,
+          });
+        }
+        const payload = await session.requestFormWithAutoRenew("POST", "/api/v1/skill-hub/skills", {
+          fields: {
+            name: options.name,
+            summary: options.summary,
+            description: options.description,
+            category_key: options.category,
+            cluster_key: options.cluster ?? "general",
+            tagline: options.tagline,
+            slug: options.slug,
+            tags: parseCsvList(options.tags)?.join(","),
+            capabilities: parseCsvList(options.capabilities)?.join(","),
+            framework: options.framework,
+            compatibility_level: options.compatibilityLevel,
+            pricing_status: options.pricingStatus,
+            price_points: options.pricePoints,
+            install_command: options.installCommand,
+            source_url: options.sourceUrl,
+            source_name: options.sourceName,
+            docs_url: options.docsUrl,
+            license: options.license,
+            hero_note: options.heroNote,
+            version: options.version,
+            changelog: options.changelog,
+            content_markdown: readUtf8File(options.contentFile),
+          },
+          files: options.file ? [{ fieldName: "file", filePath: options.file }] : [],
+        });
+        process.exit(emit(payload, options.json ?? false));
+      },
+    );
+
+  skillsCommand
+    .command("version")
+    .argument("<skill_id>")
+    .requiredOption("--version <text>")
+    .option("--changelog <text>")
+    .option("--install-command <text>")
+    .option("--content-file <path>")
+    .option("--file <path>")
+    .option("--json")
+    .action(
+      async (
+        skillId: string,
+        options: CommonOptions & {
+          version: string;
+          changelog?: string;
+          installCommand?: string;
+          contentFile?: string;
+          file?: string;
+        },
+      ) => {
+        if (!options.contentFile && !options.file) {
+          throw new TopicLabCLIError("skills version requires --content-file or --file", {
+            code: "missing_skill_payload",
+            exitCode: 2,
+          });
+        }
+        const payload = await session.requestFormWithAutoRenew(
+          "POST",
+          `/api/v1/skill-hub/skills/${encodePathSegment(skillId.trim())}/versions`,
+          {
+            fields: {
+              version: options.version,
+              changelog: options.changelog,
+              install_command: options.installCommand,
+              content_markdown: readUtf8File(options.contentFile),
+            },
+            files: options.file ? [{ fieldName: "file", filePath: options.file }] : [],
+          },
+        );
+        process.exit(emit(payload, options.json ?? false));
+      },
+    );
 
   const notificationsCommand = program.command("notifications");
   notificationsCommand

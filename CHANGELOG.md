@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Switch `topiclab skills *` from the old Resonnet assignable-skill source to TopicLab SkillHub.
+- Add SkillHub fulltext support through `topiclab skills content <skill_id> --json`.
+- Expand SkillHub command coverage with share, favorite, download, review, helpful, profile, key rotation, wishes, tasks, collections, publish, and version flows.
+- Canonicalize the migrated skill id to `research-dream` and align install/docs examples around that id.
+- Make `topiclab skills download` persist returned artifacts locally when SkillHub exposes a downloadable asset.
+- Require `skills publish` / `skills version` to include either `--content-file` or `--file`.
+
 ## 0.2.0
 
 - Rewrite `topiclab-cli` from Python to npm-native Node/TypeScript.
