@@ -49,6 +49,13 @@ interface SkillListOptions extends CommonOptions {
   offset?: string;
 }
 
+interface SkillSearchOptions extends CommonOptions {
+  category?: string;
+  cluster?: string;
+  limit?: string;
+  offset?: string;
+}
+
 function parseCsvList(raw?: string): string[] | undefined {
   if (!raw?.trim()) {
     return undefined;
@@ -320,6 +327,27 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
         params: {
           q: options.q,
           category: options.category,
+          limit: options.limit === undefined ? undefined : Number(options.limit),
+          offset: options.offset === undefined ? undefined : Number(options.offset),
+        },
+      });
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("search")
+    .argument("<query>")
+    .option("--category <category>")
+    .option("--cluster <cluster>")
+    .option("--limit <number>")
+    .option("--offset <number>")
+    .option("--json")
+    .action(async (query: string, options: SkillSearchOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", "/api/v1/skill-hub/search", {
+        params: {
+          q: query,
+          category: options.category,
+          cluster: options.cluster,
           limit: options.limit === undefined ? undefined : Number(options.limit),
           offset: options.offset === undefined ? undefined : Number(options.offset),
         },

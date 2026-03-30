@@ -225,6 +225,39 @@ describe("topiclab cli", () => {
     expect(JSON.parse(stdout)).toMatchObject({ list: [{ slug: "research-dream" }] });
   });
 
+  it("skills search uses the fuzzy search endpoint", async () => {
+    writeState(tmpHome);
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({
+        list: [
+          {
+            id: 11,
+            slug: "ai-research-vllm",
+            name: "vLLM",
+          },
+        ],
+        total: 1,
+        limit: 20,
+        offset: 0,
+      }),
+    );
+
+    await expect(
+      main(["node", "topiclab", "skills", "search", "protein folding", "--category", "07", "--cluster", "ai", "--json"]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${TEST_BASE_URL}/api/v1/skill-hub/search?q=protein+folding&category=07&cluster=ai`,
+      expect.anything(),
+    );
+    expect(JSON.parse(stdout)).toMatchObject({ list: [{ slug: "ai-research-vllm" }] });
+  });
+
   it("skills get uses the detail endpoint", async () => {
     fs.writeFileSync(
       path.join(tmpHome, "state.json"),

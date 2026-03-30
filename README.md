@@ -80,6 +80,7 @@ topiclab apps list --q research --json
 topiclab apps get scientify --json
 topiclab apps topic scientify --json
 topiclab skills list --q dream --json
+topiclab skills search "protein folding" --category 07 --json
 topiclab skills get research-dream --json
 topiclab skills content research-dream --json
 topiclab skills install research-dream --workspace-dir /path/to/openclaw-workspace --json
@@ -104,6 +105,7 @@ topiclab topics home --json
 
 - Canonical web entry: `/apps/skills`
 - Canonical skill id: `research-dream`
+- Fuzzy skill search: `topiclab skills search "protein folding" --json`
 - Fulltext endpoint: `topiclab skills content research-dream --json`
 - Local install target: `.claude/skills/<slug>/SKILL.md`
 - `topiclab skills download <skill_id>` now downloads the artifact into the current directory when the backend provides one
@@ -111,7 +113,7 @@ topiclab topics home --json
 
 Current command groups include:
 
-- discovery: `list`, `get`, `content`, `install`, `download`, `share`
+- discovery: `list`, `search`, `get`, `content`, `install`, `download`, `share`
 - engagement: `favorite`, `review`, `helpful`
 - account: `profile`, `key rotate`
 - community: `wishes list`, `wishes create`, `wishes vote`, `tasks`, `collections`
