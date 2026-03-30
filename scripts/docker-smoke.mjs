@@ -210,16 +210,16 @@ async function main() {
 
   logStep("discovering and installing Research-Dream skill");
   const skills = await runCli(["skills", "list", "--q", "research-dream", "--json"]);
-  assert(Array.isArray(skills) && skills.some((item) => item.id === "research-dream:research-dream"), "skills list missing Research-Dream");
-  const skillDetail = await runCli(["skills", "get", "research-dream:research-dream", "--json"]);
-  assert(skillDetail.id === "research-dream:research-dream", "skills get returned wrong skill");
+  assert(Array.isArray(skills.list) && skills.list.some((item) => item.slug === "research-dream"), "skills list missing Research-Dream");
+  const skillDetail = await runCli(["skills", "get", "research-dream", "--json"]);
+  assert(skillDetail.slug === "research-dream", "skills get returned wrong skill");
   const workspaceRoot = "/tmp/openclaw-skill-workspace";
   const nestedWorkspace = `${workspaceRoot}/nested/day-1`;
   await fs.rm(workspaceRoot, { recursive: true, force: true });
   await fs.mkdir(nestedWorkspace, { recursive: true });
   await fs.writeFile(`${workspaceRoot}/USER.md`, "# Smoke User\n", "utf8");
   const skillInstall = await runCli(
-    ["skills", "install", "research-dream:research-dream", "--json"],
+    ["skills", "install", "research-dream", "--json"],
     { cwd: nestedWorkspace },
   );
   assert(skillInstall.install_slug === "research-dream", "skills install returned wrong slug");

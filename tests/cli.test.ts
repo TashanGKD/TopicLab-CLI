@@ -163,7 +163,7 @@ describe("topiclab cli", () => {
     expect(JSON.parse(stdout)).toMatchObject({ topic: { id: "topic_123" } });
   });
 
-  it("skills list returns assignable skills from backend", async () => {
+  it("skills list returns skill hub skills from backend", async () => {
     fs.writeFileSync(
       path.join(tmpHome, "state.json"),
       JSON.stringify(
@@ -184,21 +184,27 @@ describe("topiclab cli", () => {
       throw new Error(`exit:${code ?? 0}`);
     });
     global.fetch = vi.fn().mockResolvedValue(
-      jsonResponse([
-        {
-          id: "research-dream:research-dream",
-          name: "research-dream",
-          source: "research-dream",
-          category: "general",
-        },
-      ] as unknown as Record<string, unknown>),
+      jsonResponse({
+        list: [
+          {
+            id: 1,
+            slug: "research-dream",
+            name: "Research-Dream",
+            category_key: "07",
+            category_name: "理学",
+          },
+        ],
+        total: 1,
+        limit: 20,
+        offset: 0,
+      }),
     );
 
     await expect(main(["node", "topiclab", "skills", "list", "--q", "dream", "--json"])).rejects.toThrow("exit:0");
 
     expect(exitMock).toHaveBeenCalledWith(0);
-    expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/skills/assignable?q=dream`, expect.anything());
-    expect(JSON.parse(stdout)).toMatchObject([{ id: "research-dream:research-dream" }]);
+    expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/api/v1/skill-hub/skills?q=dream`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ list: [{ slug: "research-dream" }] });
   });
 
   it("skills get uses the detail endpoint", async () => {
@@ -223,21 +229,22 @@ describe("topiclab cli", () => {
     });
     global.fetch = vi.fn().mockResolvedValue(
       jsonResponse({
-        id: "research-dream:research-dream",
-        content_path: "/skills/assignable/research-dream%3Aresearch-dream/content",
+        id: 1,
+        slug: "research-dream",
+        name: "Research-Dream",
       }),
     );
 
-    await expect(main(["node", "topiclab", "skills", "get", "research-dream:research-dream", "--json"])).rejects.toThrow(
+    await expect(main(["node", "topiclab", "skills", "get", "research-dream", "--json"])).rejects.toThrow(
       "exit:0",
     );
 
     expect(exitMock).toHaveBeenCalledWith(0);
     expect(global.fetch).toHaveBeenCalledWith(
-      `${TEST_BASE_URL}/skills/assignable/research-dream%3Aresearch-dream`,
+      `${TEST_BASE_URL}/api/v1/skill-hub/skills/research-dream`,
       expect.anything(),
     );
-    expect(JSON.parse(stdout)).toMatchObject({ id: "research-dream:research-dream" });
+    expect(JSON.parse(stdout)).toMatchObject({ slug: "research-dream" });
   });
 
   it("skills content uses the content endpoint", async () => {
@@ -262,17 +269,21 @@ describe("topiclab cli", () => {
     });
     global.fetch = vi.fn().mockResolvedValue(
       jsonResponse({
+        skill: { id: 1, slug: "research-dream", name: "Research-Dream" },
+        version: { id: 7, version: "1.0.0" },
         content: "---\nmetadata: {\"openclaw\":{\"skillKey\":\"research-dream\"}}\n---\n# Research Dream\n",
+        content_type: "text/markdown",
+        format: "skill_md",
       }),
     );
 
     await expect(
-      main(["node", "topiclab", "skills", "content", "research-dream:research-dream", "--json"]),
+      main(["node", "topiclab", "skills", "content", "research-dream", "--json"]),
     ).rejects.toThrow("exit:0");
 
     expect(exitMock).toHaveBeenCalledWith(0);
     expect(global.fetch).toHaveBeenCalledWith(
-      `${TEST_BASE_URL}/skills/assignable/research-dream%3Aresearch-dream/content`,
+      `${TEST_BASE_URL}/api/v1/skill-hub/skills/research-dream/content`,
       expect.anything(),
     );
     expect(JSON.parse(stdout)).toMatchObject({ content: expect.stringContaining("Research Dream") });
@@ -303,14 +314,12 @@ describe("topiclab cli", () => {
       .fn()
       .mockResolvedValueOnce(
         jsonResponse({
-          id: "research-dream:research-dream",
-          content_path: "/skills/assignable/research-dream%3Aresearch-dream/content",
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
+          skill: { id: 1, slug: "research-dream", name: "Research-Dream" },
+          version: { id: 7, version: "1.0.0" },
           content:
             "---\nmetadata: {\"openclaw\":{\"skillKey\":\"research-dream\"}}\n---\n# Research Dream\nContent\n",
+          content_type: "text/markdown",
+          format: "skill_md",
         }),
       );
 
@@ -320,7 +329,7 @@ describe("topiclab cli", () => {
         "topiclab",
         "skills",
         "install",
-        "research-dream:research-dream",
+        "research-dream",
         "--workspace-dir",
         tmpWorkspace,
         "--json",
@@ -365,11 +374,10 @@ describe("topiclab cli", () => {
     });
     global.fetch = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ id: "research-dream:research-dream", content_path: "/skills/assignable/research-dream%3Aresearch-dream/content" }))
-      .mockResolvedValueOnce(jsonResponse({ content: "# Research Dream\n" }));
+      .mockResolvedValueOnce(jsonResponse({ skill: { slug: "research-dream" }, version: { version: "1.0.0" }, content: "# Research Dream\n" }));
 
     await expect(
-      main(["node", "topiclab", "skills", "install", "research-dream:research-dream", "--json"]),
+      main(["node", "topiclab", "skills", "install", "research-dream", "--json"]),
     ).rejects.toThrow("exit:0");
 
     expect(exitMock).toHaveBeenCalledWith(0);
@@ -405,11 +413,10 @@ describe("topiclab cli", () => {
     });
     global.fetch = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ id: "research-dream:research-dream", content_path: "/skills/assignable/research-dream%3Aresearch-dream/content" }))
-      .mockResolvedValueOnce(jsonResponse({ content: "# Research Dream\n" }));
+      .mockResolvedValueOnce(jsonResponse({ skill: { slug: "research-dream" }, version: { version: "1.0.0" }, content: "# Research Dream\n" }));
 
     await expect(
-      main(["node", "topiclab", "skills", "install", "research-dream:research-dream", "--json"]),
+      main(["node", "topiclab", "skills", "install", "research-dream", "--json"]),
     ).rejects.toThrow("exit:5");
 
     expect(exitMock).toHaveBeenCalledWith(5);
@@ -445,8 +452,7 @@ describe("topiclab cli", () => {
     });
     global.fetch = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ id: "research-dream:research-dream", content_path: "/skills/assignable/research-dream%3Aresearch-dream/content" }))
-      .mockResolvedValueOnce(jsonResponse({ content: "# Research Dream\nnew\n" }));
+      .mockResolvedValueOnce(jsonResponse({ skill: { slug: "research-dream" }, version: { version: "1.0.0" }, content: "# Research Dream\nnew\n" }));
 
     await expect(
       main([
@@ -454,7 +460,7 @@ describe("topiclab cli", () => {
         "topiclab",
         "skills",
         "install",
-        "research-dream:research-dream",
+        "research-dream",
         "--workspace-dir",
         tmpWorkspace,
         "--json",
@@ -469,8 +475,7 @@ describe("topiclab cli", () => {
     stdout = "";
     global.fetch = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ id: "research-dream:research-dream", content_path: "/skills/assignable/research-dream%3Aresearch-dream/content" }))
-      .mockResolvedValueOnce(jsonResponse({ content: "# Research Dream\nforced\n" }));
+      .mockResolvedValueOnce(jsonResponse({ skill: { slug: "research-dream" }, version: { version: "1.0.0" }, content: "# Research Dream\nforced\n" }));
 
     await expect(
       main([
@@ -478,7 +483,7 @@ describe("topiclab cli", () => {
         "topiclab",
         "skills",
         "install",
-        "research-dream:research-dream",
+        "research-dream",
         "--workspace-dir",
         tmpWorkspace,
         "--force",

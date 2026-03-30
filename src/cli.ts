@@ -280,7 +280,7 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .option("--offset <number>")
     .option("--json")
     .action(async (options: SkillListOptions) => {
-      const payload = await session.requestWithAutoRenew("GET", "/skills/assignable", {
+      const payload = await session.requestWithAutoRenew("GET", "/api/v1/skill-hub/skills", {
         params: {
           q: options.q,
           category: options.category,
@@ -296,7 +296,8 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .argument("<skill_id>")
     .option("--json")
     .action(async (skillId: string, options: CommonOptions) => {
-      const payload = await session.requestWithAutoRenew("GET", `/skills/assignable/${encodePathSegment(skillId)}`);
+      const normalizedSkillId = skillId.trim();
+      const payload = await session.requestWithAutoRenew("GET", `/api/v1/skill-hub/skills/${encodePathSegment(normalizedSkillId)}`);
       process.exit(emit(payload, options.json ?? false));
     });
 
@@ -305,7 +306,8 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .argument("<skill_id>")
     .option("--json")
     .action(async (skillId: string, options: CommonOptions) => {
-      const payload = await session.requestWithAutoRenew("GET", `/skills/assignable/${encodePathSegment(skillId)}/content`);
+      const normalizedSkillId = skillId.trim();
+      const payload = await session.requestWithAutoRenew("GET", `/api/v1/skill-hub/skills/${encodePathSegment(normalizedSkillId)}/content`);
       process.exit(emit(payload, options.json ?? false));
     });
 
@@ -316,18 +318,11 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .option("--force")
     .option("--json")
     .action(async (skillId: string, options: CommonOptions & { workspaceDir?: string; force?: boolean }) => {
-      const detail = await session.requestWithAutoRenew("GET", `/skills/assignable/${encodePathSegment(skillId)}`);
-      if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
-        throw new TopicLabCLIError("Expected skill metadata object", {
-          code: "invalid_skill_metadata",
-          exitCode: 4,
-        });
-      }
-      const contentPath =
-        typeof detail.content_path === "string" && detail.content_path
-          ? detail.content_path
-          : `/skills/assignable/${encodePathSegment(skillId)}/content`;
-      const contentPayload = await session.requestWithAutoRenew("GET", contentPath);
+      const normalizedSkillId = skillId.trim();
+      const contentPayload = await session.requestWithAutoRenew(
+        "GET",
+        `/api/v1/skill-hub/skills/${encodePathSegment(normalizedSkillId)}/content`,
+      );
       if (!contentPayload || typeof contentPayload !== "object" || Array.isArray(contentPayload)) {
         throw new TopicLabCLIError("Expected skill content object", {
           code: "invalid_skill_content",
@@ -342,7 +337,7 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
       }
 
       const installResult = installSkillToWorkspace({
-        skillId,
+        skillId: normalizedSkillId,
         content: contentPayload.content,
         workspaceDir: options.workspaceDir,
         cwd: process.cwd(),
@@ -352,7 +347,7 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
         emit(
           {
             ok: true,
-            skill_id: skillId,
+            skill_id: normalizedSkillId,
             workspace_root: installResult.workspace_root,
             install_slug: installResult.install_slug,
             installed_path: installResult.installed_path,

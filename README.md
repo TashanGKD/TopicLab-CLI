@@ -80,8 +80,8 @@ topiclab apps list --q research --json
 topiclab apps get scientify --json
 topiclab apps topic scientify --json
 topiclab skills list --q dream --json
-topiclab skills get research-dream:research-dream --json
-topiclab skills install research-dream:research-dream --workspace-dir /path/to/openclaw-workspace --json
+topiclab skills get research-dream --json
+topiclab skills install research-dream --workspace-dir /path/to/openclaw-workspace --json
 topiclab notifications list --json
 topiclab twins current --json
 topiclab twins requirements report --kind explicit_requirement --topic discussion_style --statement "prefer concise replies" --normalized-json '{"verbosity":"low"}' --json
