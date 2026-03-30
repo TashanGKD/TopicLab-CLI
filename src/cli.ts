@@ -8,6 +8,7 @@ import { StateStore } from "./config.js";
 import { TopicLabCLIError } from "./errors.js";
 import { TopicLabHTTPClient } from "./http.js";
 import { SessionManager } from "./session.js";
+import { installSkillToWorkspace } from "./skills.js";
 
 type Jsonish = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
@@ -38,6 +39,13 @@ interface HelpAskOptions extends CommonOptions {
 interface AppListOptions extends CommonOptions {
   q?: string;
   tag?: string;
+}
+
+interface SkillListOptions extends CommonOptions {
+  q?: string;
+  category?: string;
+  limit?: string;
+  offset?: string;
 }
 
 export const CLI_MODULE_URL = import.meta.url;
@@ -110,6 +118,12 @@ async function resolveTwinId(session: SessionManager, twinId?: string): Promise<
     return twinId;
   }
   const current = await session.requestWithAutoRenew("GET", "/api/v1/openclaw/twins/current");
+  if (!current || typeof current !== "object" || Array.isArray(current)) {
+    throw new TopicLabCLIError("Unable to resolve current twin_id", {
+      code: "missing_twin_id",
+      exitCode: 2,
+    });
+  }
   const currentTwin = current.twin as Record<string, unknown> | undefined;
   const resolved = currentTwin?.twin_id;
   if (typeof resolved !== "string" || !resolved) {
@@ -174,6 +188,10 @@ function resolveBaseUrl(store: StateStore, override?: string): string {
   return baseUrl;
 }
 
+function encodePathSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
 function buildProgram(session: SessionManager, store: StateStore): Command {
   const program = new Command();
 
@@ -226,6 +244,12 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .option("--json")
     .action(async (options: AppListOptions) => {
       const payload = await session.requestWithAutoRenew("GET", "/api/v1/apps");
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new TopicLabCLIError("Expected apps catalog object", {
+          code: "invalid_apps_payload",
+          exitCode: 4,
+        });
+      }
       process.exit(emit(filterApps(payload, options), options.json ?? false));
     });
 
@@ -245,6 +269,98 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .action(async (appId: string, options: CommonOptions) => {
       const payload = await session.requestWithAutoRenew("POST", `/api/v1/apps/${appId}/topic`);
       process.exit(emit(payload, options.json ?? false));
+    });
+
+  const skillsCommand = program.command("skills");
+  skillsCommand
+    .command("list")
+    .option("--q <query>")
+    .option("--category <category>")
+    .option("--limit <number>")
+    .option("--offset <number>")
+    .option("--json")
+    .action(async (options: SkillListOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", "/skills/assignable", {
+        params: {
+          q: options.q,
+          category: options.category,
+          limit: options.limit === undefined ? undefined : Number(options.limit),
+          offset: options.offset === undefined ? undefined : Number(options.offset),
+        },
+      });
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("get")
+    .argument("<skill_id>")
+    .option("--json")
+    .action(async (skillId: string, options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", `/skills/assignable/${encodePathSegment(skillId)}`);
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("content")
+    .argument("<skill_id>")
+    .option("--json")
+    .action(async (skillId: string, options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("GET", `/skills/assignable/${encodePathSegment(skillId)}/content`);
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  skillsCommand
+    .command("install")
+    .argument("<skill_id>")
+    .option("--workspace-dir <path>")
+    .option("--force")
+    .option("--json")
+    .action(async (skillId: string, options: CommonOptions & { workspaceDir?: string; force?: boolean }) => {
+      const detail = await session.requestWithAutoRenew("GET", `/skills/assignable/${encodePathSegment(skillId)}`);
+      if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+        throw new TopicLabCLIError("Expected skill metadata object", {
+          code: "invalid_skill_metadata",
+          exitCode: 4,
+        });
+      }
+      const contentPath =
+        typeof detail.content_path === "string" && detail.content_path
+          ? detail.content_path
+          : `/skills/assignable/${encodePathSegment(skillId)}/content`;
+      const contentPayload = await session.requestWithAutoRenew("GET", contentPath);
+      if (!contentPayload || typeof contentPayload !== "object" || Array.isArray(contentPayload)) {
+        throw new TopicLabCLIError("Expected skill content object", {
+          code: "invalid_skill_content",
+          exitCode: 4,
+        });
+      }
+      if (typeof contentPayload.content !== "string" || !contentPayload.content) {
+        throw new TopicLabCLIError("Skill content payload is missing content", {
+          code: "missing_skill_content",
+          exitCode: 4,
+        });
+      }
+
+      const installResult = installSkillToWorkspace({
+        skillId,
+        content: contentPayload.content,
+        workspaceDir: options.workspaceDir,
+        cwd: process.cwd(),
+        force: options.force ?? false,
+      });
+      process.exit(
+        emit(
+          {
+            ok: true,
+            skill_id: skillId,
+            workspace_root: installResult.workspace_root,
+            install_slug: installResult.install_slug,
+            installed_path: installResult.installed_path,
+            overwritten: installResult.overwritten,
+          },
+          options.json ?? false,
+        ),
+      );
     });
 
   const notificationsCommand = program.command("notifications");

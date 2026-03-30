@@ -46,10 +46,10 @@ async function requestJson(method, path, { token, body } = {}) {
   return parsed;
 }
 
-async function runCli(args, { expectExitCode = 0 } = {}) {
+async function runCli(args, { expectExitCode = 0, cwd = CLI_CWD } = {}) {
   try {
     const { stdout } = await execFileAsync("node", ["dist/cli.js", ...args], {
-      cwd: CLI_CWD,
+      cwd,
       env: {
         ...process.env,
         TOPICLAB_BASE_URL,
@@ -207,6 +207,25 @@ async function main() {
   assert(typeof home === "object" && home !== null, "topics home returned unexpected payload");
   const searchBefore = await runCli(["topics", "search", "--q", "docker smoke", "--json"]);
   assert(Array.isArray(searchBefore.items), "topics search missing items");
+
+  logStep("discovering and installing Research-Dream skill");
+  const skills = await runCli(["skills", "list", "--q", "research-dream", "--json"]);
+  assert(Array.isArray(skills) && skills.some((item) => item.id === "research-dream:research-dream"), "skills list missing Research-Dream");
+  const skillDetail = await runCli(["skills", "get", "research-dream:research-dream", "--json"]);
+  assert(skillDetail.id === "research-dream:research-dream", "skills get returned wrong skill");
+  const workspaceRoot = "/tmp/openclaw-skill-workspace";
+  const nestedWorkspace = `${workspaceRoot}/nested/day-1`;
+  await fs.rm(workspaceRoot, { recursive: true, force: true });
+  await fs.mkdir(nestedWorkspace, { recursive: true });
+  await fs.writeFile(`${workspaceRoot}/USER.md`, "# Smoke User\n", "utf8");
+  const skillInstall = await runCli(
+    ["skills", "install", "research-dream:research-dream", "--json"],
+    { cwd: nestedWorkspace },
+  );
+  assert(skillInstall.install_slug === "research-dream", "skills install returned wrong slug");
+  const installedSkill = `${workspaceRoot}/.claude/skills/research-dream/SKILL.md`;
+  const installedContent = await fs.readFile(installedSkill, "utf8");
+  assert(installedContent.includes("Research Dream"), "skills install did not write Research-Dream");
 
   const createdTopic = await runCli([
     "topics",

@@ -1,6 +1,6 @@
 import { CLIState, StateStore } from "./config.js";
 import { TopicLabCLIError } from "./errors.js";
-import { normalizeBaseUrl, TopicLabHTTPClient } from "./http.js";
+import { normalizeBaseUrl, TopicLabHTTPClient, TopicLabJSON } from "./http.js";
 
 export class SessionManager {
   store: StateStore;
@@ -39,14 +39,15 @@ export class SessionManager {
     }
 
     const client = new TopicLabHTTPClient(state.base_url);
-    const payload =
+    const payload = (
       options.forceRenew || state.access_token
         ? await client.requestJson("POST", "/api/v1/openclaw/session/renew", {
             headers: { Authorization: `Bearer ${state.bind_key}` },
           })
         : await client.requestJson("GET", "/api/v1/openclaw/bootstrap", {
             params: { key: state.bind_key },
-          });
+          })
+    ) as Record<string, unknown>;
 
     state.access_token = String(payload.access_token ?? "");
     state.agent_uid = payload.agent_uid ? String(payload.agent_uid) : null;
@@ -100,7 +101,7 @@ export class SessionManager {
       params?: Record<string, unknown>;
       jsonBody?: Record<string, unknown>;
     } = {},
-  ): Promise<Record<string, unknown>> {
+  ): Promise<TopicLabJSON> {
     try {
       const client = await this.authedClient();
       return await client.requestJson(method, requestPath, options);

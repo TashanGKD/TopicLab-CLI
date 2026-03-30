@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { TopicLabCLIError } from "./errors.js";
 
+export type TopicLabJSON = Record<string, unknown> | unknown[];
+
 const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
   ".gif": "image/gif",
   ".jpeg": "image/jpeg",
@@ -71,7 +73,7 @@ export class TopicLabHTTPClient {
       jsonBody?: Record<string, unknown>;
       headers?: Record<string, string>;
     } = {},
-  ): Promise<Record<string, unknown>> {
+  ): Promise<TopicLabJSON> {
     const headers = this.buildHeaders(options.headers);
     let body: BodyInit | undefined;
     if (options.jsonBody !== undefined) {
@@ -125,10 +127,17 @@ export class TopicLabHTTPClient {
       });
     }
 
-    return this.parseJsonResponse(response, requestPath);
+    const payload = await this.parseJsonResponse(response, requestPath);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new TopicLabCLIError(`Expected JSON object response from ${requestPath}`, {
+        code: "invalid_json",
+        exitCode: 4,
+      });
+    }
+    return payload;
   }
 
-  private async parseJsonResponse(response: Response, requestPath: string): Promise<Record<string, unknown>> {
+  private async parseJsonResponse(response: Response, requestPath: string): Promise<TopicLabJSON> {
     const rawText = await response.text();
     let parsed: unknown = null;
     if (rawText) {
@@ -163,14 +172,14 @@ export class TopicLabHTTPClient {
       });
     }
 
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (!parsed || typeof parsed !== "object") {
       throw new TopicLabCLIError(`Expected JSON response from ${requestPath}`, {
         code: "invalid_json",
         exitCode: 4,
       });
     }
 
-    return parsed as Record<string, unknown>;
+    return parsed as TopicLabJSON;
   }
 
   private errorCodeForStatus(status: number): string {

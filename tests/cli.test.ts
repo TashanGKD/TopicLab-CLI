@@ -15,7 +15,7 @@ const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const TEST_BASE_URL = "https://world.tashan.chat";
 const TEST_BIND_KEY = "tlos_test";
 
-function jsonResponse(payload: Record<string, unknown>, init?: ResponseInit): Response {
+function jsonResponse(payload: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(payload), {
     status: init?.status ?? 200,
     headers: { "content-type": "application/json" },
@@ -24,10 +24,14 @@ function jsonResponse(payload: Record<string, unknown>, init?: ResponseInit): Re
 
 describe("topiclab cli", () => {
   let tmpHome: string;
+  let tmpWorkspace: string;
+  let originalCwd: string;
   let stdout = "";
 
   beforeEach(() => {
+    originalCwd = process.cwd();
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "topiclab-cli-"));
+    tmpWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "topiclab-workspace-"));
     process.env.TOPICLAB_CLI_HOME = tmpHome;
     stdout = "";
     vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
@@ -37,6 +41,7 @@ describe("topiclab cli", () => {
   });
 
   afterEach(() => {
+    process.chdir(originalCwd);
     vi.restoreAllMocks();
     global.fetch = originalFetch;
     process.exit = originalExit;
@@ -156,6 +161,333 @@ describe("topiclab cli", () => {
     expect(exitMock).toHaveBeenCalledWith(0);
     expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/api/v1/apps/scientify/topic`, expect.anything());
     expect(JSON.parse(stdout)).toMatchObject({ topic: { id: "topic_123" } });
+  });
+
+  it("skills list returns assignable skills from backend", async () => {
+    fs.writeFileSync(
+      path.join(tmpHome, "state.json"),
+      JSON.stringify(
+        {
+          base_url: TEST_BASE_URL,
+          bind_key: TEST_BIND_KEY,
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: {},
+          last_refreshed_at: "2026-03-27T00:00:00+00:00",
+        },
+        null,
+        2,
+      ),
+    );
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse([
+        {
+          id: "research-dream:research-dream",
+          name: "research-dream",
+          source: "research-dream",
+          category: "general",
+        },
+      ] as unknown as Record<string, unknown>),
+    );
+
+    await expect(main(["node", "topiclab", "skills", "list", "--q", "dream", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/skills/assignable?q=dream`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject([{ id: "research-dream:research-dream" }]);
+  });
+
+  it("skills get uses the detail endpoint", async () => {
+    fs.writeFileSync(
+      path.join(tmpHome, "state.json"),
+      JSON.stringify(
+        {
+          base_url: TEST_BASE_URL,
+          bind_key: TEST_BIND_KEY,
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: {},
+          last_refreshed_at: "2026-03-27T00:00:00+00:00",
+        },
+        null,
+        2,
+      ),
+    );
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: "research-dream:research-dream",
+        content_path: "/skills/assignable/research-dream%3Aresearch-dream/content",
+      }),
+    );
+
+    await expect(main(["node", "topiclab", "skills", "get", "research-dream:research-dream", "--json"])).rejects.toThrow(
+      "exit:0",
+    );
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${TEST_BASE_URL}/skills/assignable/research-dream%3Aresearch-dream`,
+      expect.anything(),
+    );
+    expect(JSON.parse(stdout)).toMatchObject({ id: "research-dream:research-dream" });
+  });
+
+  it("skills content uses the content endpoint", async () => {
+    fs.writeFileSync(
+      path.join(tmpHome, "state.json"),
+      JSON.stringify(
+        {
+          base_url: TEST_BASE_URL,
+          bind_key: TEST_BIND_KEY,
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: {},
+          last_refreshed_at: "2026-03-27T00:00:00+00:00",
+        },
+        null,
+        2,
+      ),
+    );
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({
+        content: "---\nmetadata: {\"openclaw\":{\"skillKey\":\"research-dream\"}}\n---\n# Research Dream\n",
+      }),
+    );
+
+    await expect(
+      main(["node", "topiclab", "skills", "content", "research-dream:research-dream", "--json"]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${TEST_BASE_URL}/skills/assignable/research-dream%3Aresearch-dream/content`,
+      expect.anything(),
+    );
+    expect(JSON.parse(stdout)).toMatchObject({ content: expect.stringContaining("Research Dream") });
+  });
+
+  it("skills install writes to explicit workspace dir", async () => {
+    fs.writeFileSync(
+      path.join(tmpHome, "state.json"),
+      JSON.stringify(
+        {
+          base_url: TEST_BASE_URL,
+          bind_key: TEST_BIND_KEY,
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: {},
+          last_refreshed_at: "2026-03-27T00:00:00+00:00",
+        },
+        null,
+        2,
+      ),
+    );
+    fs.mkdirSync(tmpWorkspace, { recursive: true });
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "research-dream:research-dream",
+          content_path: "/skills/assignable/research-dream%3Aresearch-dream/content",
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content:
+            "---\nmetadata: {\"openclaw\":{\"skillKey\":\"research-dream\"}}\n---\n# Research Dream\nContent\n",
+        }),
+      );
+
+    await expect(
+      main([
+        "node",
+        "topiclab",
+        "skills",
+        "install",
+        "research-dream:research-dream",
+        "--workspace-dir",
+        tmpWorkspace,
+        "--json",
+      ]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    const installedPath = path.join(tmpWorkspace, ".claude", "skills", "research-dream", "SKILL.md");
+    expect(fs.existsSync(installedPath)).toBe(true);
+    expect(fs.readFileSync(installedPath, "utf8")).toContain("Research Dream");
+    expect(JSON.parse(stdout)).toMatchObject({
+      install_slug: "research-dream",
+      installed_path: installedPath,
+      overwritten: false,
+    });
+  });
+
+  it("skills install infers workspace from cwd markers", async () => {
+    fs.writeFileSync(
+      path.join(tmpHome, "state.json"),
+      JSON.stringify(
+        {
+          base_url: TEST_BASE_URL,
+          bind_key: TEST_BIND_KEY,
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: {},
+          last_refreshed_at: "2026-03-27T00:00:00+00:00",
+        },
+        null,
+        2,
+      ),
+    );
+
+    fs.writeFileSync(path.join(tmpWorkspace, "USER.md"), "# user\n");
+    const nestedDir = path.join(tmpWorkspace, "notes", "daily");
+    fs.mkdirSync(nestedDir, { recursive: true });
+    process.chdir(nestedDir);
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ id: "research-dream:research-dream", content_path: "/skills/assignable/research-dream%3Aresearch-dream/content" }))
+      .mockResolvedValueOnce(jsonResponse({ content: "# Research Dream\n" }));
+
+    await expect(
+      main(["node", "topiclab", "skills", "install", "research-dream:research-dream", "--json"]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    const resolvedWorkspace = fs.realpathSync(tmpWorkspace);
+    const installedPath = path.join(resolvedWorkspace, ".claude", "skills", "research-dream", "SKILL.md");
+    expect(fs.existsSync(installedPath)).toBe(true);
+    expect(JSON.parse(stdout)).toMatchObject({
+      workspace_root: resolvedWorkspace,
+      installed_path: installedPath,
+    });
+  });
+
+  it("skills install fails when workspace cannot be inferred", async () => {
+    fs.writeFileSync(
+      path.join(tmpHome, "state.json"),
+      JSON.stringify(
+        {
+          base_url: TEST_BASE_URL,
+          bind_key: TEST_BIND_KEY,
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: {},
+          last_refreshed_at: "2026-03-27T00:00:00+00:00",
+        },
+        null,
+        2,
+      ),
+    );
+    process.chdir(tmpWorkspace);
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ id: "research-dream:research-dream", content_path: "/skills/assignable/research-dream%3Aresearch-dream/content" }))
+      .mockResolvedValueOnce(jsonResponse({ content: "# Research Dream\n" }));
+
+    await expect(
+      main(["node", "topiclab", "skills", "install", "research-dream:research-dream", "--json"]),
+    ).rejects.toThrow("exit:5");
+
+    expect(exitMock).toHaveBeenCalledWith(5);
+    expect(JSON.parse(stdout)).toMatchObject({
+      error: { code: "workspace_not_found" },
+    });
+  });
+
+  it("skills install requires --force to overwrite", async () => {
+    fs.writeFileSync(
+      path.join(tmpHome, "state.json"),
+      JSON.stringify(
+        {
+          base_url: TEST_BASE_URL,
+          bind_key: TEST_BIND_KEY,
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: {},
+          last_refreshed_at: "2026-03-27T00:00:00+00:00",
+        },
+        null,
+        2,
+      ),
+    );
+
+    fs.writeFileSync(path.join(tmpWorkspace, "USER.md"), "# user\n");
+    const installedDir = path.join(tmpWorkspace, ".claude", "skills", "research-dream");
+    fs.mkdirSync(installedDir, { recursive: true });
+    fs.writeFileSync(path.join(installedDir, "SKILL.md"), "old\n");
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ id: "research-dream:research-dream", content_path: "/skills/assignable/research-dream%3Aresearch-dream/content" }))
+      .mockResolvedValueOnce(jsonResponse({ content: "# Research Dream\nnew\n" }));
+
+    await expect(
+      main([
+        "node",
+        "topiclab",
+        "skills",
+        "install",
+        "research-dream:research-dream",
+        "--workspace-dir",
+        tmpWorkspace,
+        "--json",
+      ]),
+    ).rejects.toThrow("exit:2");
+
+    expect(exitMock).toHaveBeenCalledWith(2);
+    expect(JSON.parse(stdout)).toMatchObject({
+      error: { code: "skill_exists" },
+    });
+
+    stdout = "";
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ id: "research-dream:research-dream", content_path: "/skills/assignable/research-dream%3Aresearch-dream/content" }))
+      .mockResolvedValueOnce(jsonResponse({ content: "# Research Dream\nforced\n" }));
+
+    await expect(
+      main([
+        "node",
+        "topiclab",
+        "skills",
+        "install",
+        "research-dream:research-dream",
+        "--workspace-dir",
+        tmpWorkspace,
+        "--force",
+        "--json",
+      ]),
+    ).rejects.toThrow("exit:0");
+
+    expect(fs.readFileSync(path.join(installedDir, "SKILL.md"), "utf8")).toContain("forced");
+    expect(JSON.parse(stdout)).toMatchObject({ overwritten: true });
   });
 
   it("notifications list uses inbox route", async () => {
