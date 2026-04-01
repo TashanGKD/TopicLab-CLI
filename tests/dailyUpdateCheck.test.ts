@@ -37,6 +37,7 @@ describe("dailyUpdateCheck", () => {
         last_refreshed_at: "2026-03-27T00:00:00+00:00",
         last_update_check_day: today,
         last_seen_skill_version: "aaa",
+        last_seen_skill_updated_at: "2026-03-27T00:00:00Z",
       }),
     );
     const client = new TopicLabHTTPClient("https://world.tashan.chat", "tloc_x");
@@ -59,6 +60,7 @@ describe("dailyUpdateCheck", () => {
         last_refreshed_at: "2026-03-27T00:00:00+00:00",
         last_update_check_day: null,
         last_seen_skill_version: "oldhash_oldhash",
+        last_seen_skill_updated_at: null,
       }),
     );
     const client = new TopicLabHTTPClient("https://world.tashan.chat", "tloc_x");
@@ -91,6 +93,7 @@ describe("dailyUpdateCheck", () => {
 
     const saved = JSON.parse(fs.readFileSync(path.join(tmp, "state.json"), "utf8"));
     expect(saved.last_seen_skill_version).toBe("newhash_newhash");
+    expect(saved.last_seen_skill_updated_at).toBe("2026-03-30T12:00:00Z");
     expect(saved.last_update_check_day).toBe(new Date().toISOString().slice(0, 10));
   });
 });

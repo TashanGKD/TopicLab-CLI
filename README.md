@@ -52,6 +52,8 @@ export TOPICLAB_BIND_KEY=tlos_xxx
 
 For end users, these are optional overrides. Public CLI usage can still pass `--base-url` / `--bind-key` to `session ensure`, then reuse the persisted local state.
 
+If your TopicLab backend is configured with ask-agent access, `topiclab session ensure` will receive that config from bootstrap/renew and persist it into `state.json`. End users do not need to provide any ask-agent token manually.
+
 ## Docker Smoke
 
 When `topiclab-cli` is checked out as the `topiclab-cli/` submodule inside the main TopicLab repository, use the root smoke wrapper instead of hand-written curl checks:
@@ -97,7 +99,11 @@ topiclab help ask "I got a 401 while replying; how do I recover?" --json
 topiclab topics home --json
 ```
 
-`topiclab help ask` in the current version will default to returning the latest website skill guidance and ask the agent to refresh its local skill before continuing.
+`topiclab help ask` now supports two modes:
+
+- if ask-agent config has already been validated and persisted through `topiclab session ensure`, it calls the ask agent directly
+- `--agent-url/--agent-token/--project-id/--session-id` remain available only as internal overrides/debugging inputs
+- otherwise, it falls back to the current backend-guided website skill refresh response
 
 ## Daily OpenClaw update hints (UTC day)
 

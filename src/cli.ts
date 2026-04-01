@@ -5,6 +5,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 
+import { invokeAskAgent, resolveAskAgentConfig } from "./ask.js";
+import { readTopiclabCliPackageVersion } from "./cliVersion.js";
 import { StateStore } from "./config.js";
 import { TopicLabCLIError } from "./errors.js";
 import { TopicLabHTTPClient } from "./http.js";
@@ -35,6 +37,10 @@ interface HelpAskOptions extends CommonOptions {
   scene?: string;
   topic?: string;
   contextJson?: string;
+  agentUrl?: string;
+  agentToken?: string;
+  projectId?: string;
+  sessionId?: string;
 }
 
 interface AppListOptions extends CommonOptions {
@@ -248,14 +254,22 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .option("--bind-key <key>")
     .option("--force-renew")
     .option("--json")
-    .action(async (options: CommonOptions & { baseUrl?: string; bindKey?: string; forceRenew?: boolean }) => {
+    .action(
+      async (
+        options: CommonOptions & {
+          baseUrl?: string;
+          bindKey?: string;
+          forceRenew?: boolean;
+        },
+      ) => {
       const payload = await session.ensureSession({
         baseUrl: options.baseUrl,
         bindKey: options.bindKey,
         forceRenew: options.forceRenew ?? false,
       });
       process.exit(emit(payload, options.json ?? false));
-    });
+      },
+    );
 
   const manifestCommand = program.command("manifest");
   manifestCommand
@@ -794,16 +808,47 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
     .option("--scene <scene>")
     .option("--topic <topic>")
     .option("--context-json <json>")
+    .option("--agent-url <url>")
+    .option("--agent-token <token>")
+    .option("--project-id <id>")
+    .option("--session-id <id>")
     .option("--json")
     .action(async (request: string, options: HelpAskOptions) => {
       const state = store.load();
+      const context = parseJsonArg(options.contextJson, {});
+      const askAgentConfig = resolveAskAgentConfig({
+        agentUrl: options.agentUrl ?? state.ask_agent.agent_url,
+        agentToken: options.agentToken ?? state.ask_agent.agent_token,
+        projectId: options.projectId ?? state.ask_agent.project_id,
+        sessionId: options.sessionId ?? state.ask_agent.session_id,
+      });
+
+      if (askAgentConfig) {
+        const payload = await invokeAskAgent({
+          request,
+          scene: options.scene,
+          topic: options.topic,
+          context,
+          topiclabCliVersion: readTopiclabCliPackageVersion(),
+          websiteSkillVersion: state.last_seen_skill_version,
+          websiteSkillUpdatedAt: state.last_seen_skill_updated_at,
+          agentUid: state.agent_uid,
+          openclawAgent: state.openclaw_agent,
+          ...askAgentConfig,
+        });
+        process.exit(emit(payload, options.json ?? false));
+      }
+
       try {
         const payload = await session.requestWithAutoRenew("POST", "/api/v1/openclaw/cli-help", {
           jsonBody: {
             request,
             scene: options.scene,
             topic: options.topic,
-            context: parseJsonArg(options.contextJson, {}),
+            context,
+            client_cli_version: readTopiclabCliPackageVersion(),
+            client_skill_version: state.last_seen_skill_version,
+            client_skill_updated_at: state.last_seen_skill_updated_at,
             agent_uid: state.agent_uid,
             openclaw_agent: state.openclaw_agent,
           },

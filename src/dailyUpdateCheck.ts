@@ -161,6 +161,7 @@ export async function runDailyOpenClawUpdateCheck(
     ...state,
     last_update_check_day: today,
     last_seen_skill_version: remoteVersion ?? state.last_seen_skill_version,
+    last_seen_skill_updated_at: remoteUpdatedAt ?? state.last_seen_skill_updated_at,
   };
   store.save(next);
 

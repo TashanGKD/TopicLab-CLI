@@ -22,6 +22,22 @@ function jsonResponse(payload: unknown, init?: ResponseInit): Response {
   });
 }
 
+function sseResponse(chunks: string[], init?: ResponseInit): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: init?.status ?? 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
 function writeState(tmpHome: string, overrides: Record<string, unknown> = {}): void {
   fs.writeFileSync(
     path.join(tmpHome, "state.json"),
@@ -32,9 +48,16 @@ function writeState(tmpHome: string, overrides: Record<string, unknown> = {}): v
         access_token: "tloc_test",
         agent_uid: "oc_123",
         openclaw_agent: {},
+        ask_agent: {
+          agent_url: null,
+          agent_token: null,
+          project_id: null,
+          session_id: null,
+        },
         last_refreshed_at: "2026-03-27T00:00:00+00:00",
         last_update_check_day: new Date().toISOString().slice(0, 10),
         last_seen_skill_version: "test_last_seen_skill_version",
+        last_seen_skill_updated_at: "2026-03-27T00:00:00Z",
         ...overrides,
       },
       null,
@@ -68,6 +91,10 @@ describe("topiclab cli", () => {
     process.exit = originalExit;
     process.stdout.write = originalStdoutWrite;
     delete process.env.TOPICLAB_CLI_HOME;
+    delete process.env.TOPICLAB_ASK_URL;
+    delete process.env.TOPICLAB_ASK_TOKEN;
+    delete process.env.TOPICLAB_ASK_PROJECT_ID;
+    delete process.env.TOPICLAB_ASK_SESSION_ID;
   });
 
   it("session ensure bootstraps and persists state", async () => {
@@ -82,8 +109,8 @@ describe("topiclab cli", () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          version: "abc123",
-          updated_at: "2026-03-01T00:00:00Z",
+          version: "skill_hash_123",
+          updated_at: "2026-03-30T12:00:00Z",
           skill_url: "/api/v1/openclaw/skill.md",
           check_url: "/api/v1/openclaw/skill-version",
         }),
@@ -98,6 +125,60 @@ describe("topiclab cli", () => {
     expect(payload.agent_uid).toBe("oc_123");
     const state = JSON.parse(fs.readFileSync(path.join(tmpHome, "state.json"), "utf8"));
     expect(state.access_token).toBe("tloc_test");
+  });
+
+  it("session ensure persists ask agent config from TopicLab bootstrap", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          access_token: "tloc_test",
+          agent_uid: "oc_123",
+          openclaw_agent: { handle: "cli-user" },
+          skill_version: "skill_hash_123",
+          skill_updated_at: "2026-03-30T12:00:00Z",
+          ask_agent: {
+            agent_url: "https://494qvb9q2p.coze.site/stream_run",
+            agent_token: "agent_token",
+            project_id: "project_123",
+            session_id: "session_456",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          version: "skill_hash_123",
+          updated_at: "2026-03-30T12:00:00Z",
+          skill_url: "/api/v1/openclaw/skill.md",
+          check_url: "/api/v1/openclaw/skill-version",
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ min_cli_version: "0.1.0" }));
+
+    const payload = await new SessionManager().ensureSession({
+      baseUrl: TEST_BASE_URL,
+      bindKey: TEST_BIND_KEY,
+    });
+
+    expect(payload).toMatchObject({
+      ask_agent: {
+        configured: true,
+        agent_url: "https://494qvb9q2p.coze.site/stream_run",
+        project_id: "project_123",
+        session_id: "session_456",
+      },
+      skill_version: "skill_hash_123",
+      skill_updated_at: "2026-03-30T12:00:00Z",
+    });
+    const state = JSON.parse(fs.readFileSync(path.join(tmpHome, "state.json"), "utf8"));
+    expect(state.ask_agent).toMatchObject({
+      agent_url: "https://494qvb9q2p.coze.site/stream_run",
+      agent_token: "agent_token",
+      project_id: "project_123",
+      session_id: "session_456",
+    });
+    expect(state.last_seen_skill_version).toBe("skill_hash_123");
+    expect(state.last_seen_skill_updated_at).toBe("2026-03-30T12:00:00Z");
   });
 
   it("manifest get uses cli-manifest route", async () => {
@@ -894,6 +975,96 @@ describe("topiclab cli", () => {
       help_source: "website_skill",
       mode: "reload_skill",
       should_refresh_skill: true,
+    });
+  });
+
+  it("help ask uses persisted ask agent config from validated TopicLab session", async () => {
+    writeState(tmpHome, {
+      openclaw_agent: { handle: "cli-user", display_name: "CLI User" },
+      ask_agent: {
+        agent_url: "https://494qvb9q2p.coze.site/stream_run",
+        agent_token: "agent_token",
+        project_id: "project_123",
+        session_id: "session_456",
+      },
+    });
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi.fn().mockResolvedValue(
+      sseResponse([
+        'data: {"event":"message","text":"hello"}\n\n',
+        'data: {"event":"done","status":"completed"}\n\n',
+      ]),
+    );
+
+    await expect(
+      main([
+        "node",
+        "topiclab",
+        "help",
+        "ask",
+        "总结今天的待办",
+        "--scene",
+        "daily_planning",
+        "--topic",
+        "work",
+        "--context-json",
+        '{"timezone":"Asia/Shanghai"}',
+        "--json",
+      ]),
+    ).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenCalledWith("https://494qvb9q2p.coze.site/stream_run", expect.anything());
+    const [, requestInit] = vi.mocked(global.fetch).mock.calls[0];
+    expect(requestInit?.headers).toMatchObject({
+      Authorization: "Bearer agent_token",
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    });
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      type: "query",
+      project_id: "project_123",
+      session_id: "session_456",
+      content: {
+        query: {
+          prompt: [
+            {
+              type: "text",
+              content: {
+                text: expect.stringContaining("总结今天的待办"),
+              },
+            },
+          ],
+        },
+      },
+    });
+    const requestBody = JSON.parse(String(requestInit?.body)) as {
+      content: { query: { prompt: Array<{ content: { text: string } }> } };
+    };
+    const promptText = requestBody.content.query.prompt[0]?.content.text ?? "";
+    expect(promptText).toContain('"topiclab_cli_version"');
+    expect(promptText).toContain('"website_skill_version": "test_last_seen_skill_version"');
+    expect(promptText).toContain('"agent_uid": "oc_123"');
+    expect(promptText).toContain('"openclaw_agent"');
+    expect(promptText).toContain('"handle": "cli-user"');
+    expect(JSON.parse(stdout)).toMatchObject({
+      help_source: "agent_stream",
+      mode: "agent_invoke",
+      topiclab_cli_version: expect.any(String),
+      website_skill_version: "test_last_seen_skill_version",
+      website_skill_updated_at: "2026-03-27T00:00:00Z",
+      agent_uid: "oc_123",
+      openclaw_agent: { handle: "cli-user", display_name: "CLI User" },
+      project_id: "project_123",
+      session_id: "session_456",
+      event_count: 2,
+      events: [
+        { event: "message", text: "hello" },
+        { event: "done", status: "completed" },
+      ],
     });
   });
 

@@ -61,6 +61,30 @@ export class SessionManager {
       payload.openclaw_agent && typeof payload.openclaw_agent === "object" && !Array.isArray(payload.openclaw_agent)
         ? (payload.openclaw_agent as Record<string, unknown>)
         : {};
+    state.last_seen_skill_version =
+      typeof payload.skill_version === "string" && payload.skill_version.trim() ? payload.skill_version.trim() : state.last_seen_skill_version;
+    state.last_seen_skill_updated_at =
+      typeof payload.skill_updated_at === "string" && payload.skill_updated_at.trim()
+        ? payload.skill_updated_at.trim()
+        : state.last_seen_skill_updated_at;
+    const payloadAskAgent =
+      payload.ask_agent && typeof payload.ask_agent === "object" && !Array.isArray(payload.ask_agent)
+        ? (payload.ask_agent as Record<string, unknown>)
+        : null;
+    if (payloadAskAgent) {
+      state.ask_agent = {
+        agent_url:
+          typeof payloadAskAgent.agent_url === "string" && payloadAskAgent.agent_url.trim() ? payloadAskAgent.agent_url.trim() : null,
+        agent_token:
+          typeof payloadAskAgent.agent_token === "string" && payloadAskAgent.agent_token.trim()
+            ? payloadAskAgent.agent_token.trim()
+            : null,
+        project_id:
+          typeof payloadAskAgent.project_id === "string" && payloadAskAgent.project_id.trim() ? payloadAskAgent.project_id.trim() : null,
+        session_id:
+          typeof payloadAskAgent.session_id === "string" && payloadAskAgent.session_id.trim() ? payloadAskAgent.session_id.trim() : null,
+      };
+    }
     state.last_refreshed_at = new Date().toISOString();
     this.store.save(state);
 
@@ -70,6 +94,19 @@ export class SessionManager {
       base_url: state.base_url,
       agent_uid: state.agent_uid,
       openclaw_agent: state.openclaw_agent,
+      skill_version: state.last_seen_skill_version,
+      skill_updated_at: state.last_seen_skill_updated_at,
+      ask_agent: {
+        configured: Boolean(
+          state.ask_agent.agent_url &&
+            state.ask_agent.agent_token &&
+            state.ask_agent.project_id &&
+            state.ask_agent.session_id,
+        ),
+        agent_url: state.ask_agent.agent_url,
+        project_id: state.ask_agent.project_id,
+        session_id: state.ask_agent.session_id,
+      },
       last_refreshed_at: state.last_refreshed_at,
     };
     return (await this.enrichPayloadWithDailyOpenClawUpdate(basePayload, authedHttp)) as Record<string, unknown>;
