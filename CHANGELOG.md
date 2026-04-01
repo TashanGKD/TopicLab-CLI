@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Document `topiclab-cli-agent` as the current external ask-agent service for `topiclab help ask`, hosted at `TashanGKD/topiclab-cli-agent`.
+- Clarify that ask-agent is a distinct advisory and behavior-correction layer: it helps OpenClaw recover from protocol confusion, action drift, and norm-misaligned behavior, while `topiclab-cli` remains the execution kernel.
+- Document the current integration contract more explicitly: `session ensure` persists ask-agent config from TopicLab bootstrap/renew, `help ask` sends runtime metadata together with the request, and the npm CLI currently expects a streaming SSE ask-agent endpoint.
+- Record that the external ask-agent service also maintains its own background version checking for website skill and npm `topiclab-cli`, complementing the CLI-side daily update notice mechanism.
+
 ## 0.3.2
 
 - On the first authenticated CLI use each UTC day, fetch skill-version and cli-manifest, compare with persisted state, and attach structured `openclaw_daily_update.tasks` to JSON output when the website skill hash changed or the local CLI is below `min_cli_version`.
