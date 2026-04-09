@@ -1117,6 +1117,70 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
       process.exit(emit(payload, options.json ?? false));
     });
 
+  topicsCommand
+    .command("like")
+    .argument("<topic_id>")
+    .option("--disable")
+    .option("--json")
+    .action(async (topicId: string, options: CommonOptions & { disable?: boolean }) => {
+      const payload = await session.requestWithAutoRenew("POST", `/api/v1/topics/${encodePathSegment(topicId)}/like`, {
+        jsonBody: { enabled: !options.disable },
+      });
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  topicsCommand
+    .command("favorite")
+    .argument("<topic_id>")
+    .option("--disable")
+    .option("--json")
+    .action(async (topicId: string, options: CommonOptions & { disable?: boolean }) => {
+      const payload = await session.requestWithAutoRenew("POST", `/api/v1/topics/${encodePathSegment(topicId)}/favorite`, {
+        jsonBody: { enabled: !options.disable },
+      });
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  topicsCommand
+    .command("share")
+    .argument("<topic_id>")
+    .option("--json")
+    .action(async (topicId: string, options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew("POST", `/api/v1/topics/${encodePathSegment(topicId)}/share`);
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  const topicPostsCommand = topicsCommand.command("posts");
+  topicPostsCommand
+    .command("like")
+    .argument("<topic_id>")
+    .argument("<post_id>")
+    .option("--disable")
+    .option("--json")
+    .action(async (topicId: string, postId: string, options: CommonOptions & { disable?: boolean }) => {
+      const payload = await session.requestWithAutoRenew(
+        "POST",
+        `/api/v1/topics/${encodePathSegment(topicId)}/posts/${encodePathSegment(postId)}/like`,
+        {
+          jsonBody: { enabled: !options.disable },
+        },
+      );
+      process.exit(emit(payload, options.json ?? false));
+    });
+
+  topicPostsCommand
+    .command("share")
+    .argument("<topic_id>")
+    .argument("<post_id>")
+    .option("--json")
+    .action(async (topicId: string, postId: string, options: CommonOptions) => {
+      const payload = await session.requestWithAutoRenew(
+        "POST",
+        `/api/v1/topics/${encodePathSegment(topicId)}/posts/${encodePathSegment(postId)}/share`,
+      );
+      process.exit(emit(payload, options.json ?? false));
+    });
+
   const discussionCommand = program.command("discussion");
   discussionCommand
     .command("start")

@@ -827,6 +827,66 @@ describe("topiclab cli", () => {
     expect(global.fetch).toHaveBeenCalledWith(`${TEST_BASE_URL}/api/v1/me/inbox?limit=20&offset=0`, expect.anything());
   });
 
+  it("topics like, favorite, and share use topic interaction endpoints", async () => {
+    writeState(tmpHome);
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ liked: true, likes_count: 4 }))
+      .mockResolvedValueOnce(jsonResponse({ favorited: true, favorites_count: 2 }))
+      .mockResolvedValueOnce(jsonResponse({ shares_count: 3 }));
+
+    await expect(main(["node", "topiclab", "topics", "like", "topic_123", "--json"])).rejects.toThrow("exit:0");
+    expect(JSON.parse(stdout)).toMatchObject({ liked: true, likes_count: 4 });
+
+    stdout = "";
+    await expect(main(["node", "topiclab", "topics", "favorite", "topic_123", "--json"])).rejects.toThrow("exit:0");
+    expect(JSON.parse(stdout)).toMatchObject({ favorited: true, favorites_count: 2 });
+
+    stdout = "";
+    await expect(main(["node", "topiclab", "topics", "share", "topic_123", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenNthCalledWith(1, `${TEST_BASE_URL}/api/v1/topics/topic_123/like`, expect.anything());
+    expect(global.fetch).toHaveBeenNthCalledWith(2, `${TEST_BASE_URL}/api/v1/topics/topic_123/favorite`, expect.anything());
+    expect(global.fetch).toHaveBeenNthCalledWith(3, `${TEST_BASE_URL}/api/v1/topics/topic_123/share`, expect.anything());
+    expect(JSON.parse(stdout)).toMatchObject({ shares_count: 3 });
+  });
+
+  it("topics posts like and share use post interaction endpoints", async () => {
+    writeState(tmpHome);
+
+    const exitMock = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    });
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ liked: true, likes_count: 6 }))
+      .mockResolvedValueOnce(jsonResponse({ shares_count: 5 }));
+
+    await expect(main(["node", "topiclab", "topics", "posts", "like", "topic_123", "post_456", "--json"])).rejects.toThrow("exit:0");
+    expect(JSON.parse(stdout)).toMatchObject({ liked: true, likes_count: 6 });
+
+    stdout = "";
+    await expect(main(["node", "topiclab", "topics", "posts", "share", "topic_123", "post_456", "--json"])).rejects.toThrow("exit:0");
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      1,
+      `${TEST_BASE_URL}/api/v1/topics/topic_123/posts/post_456/like`,
+      expect.anything(),
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      `${TEST_BASE_URL}/api/v1/topics/topic_123/posts/post_456/share`,
+      expect.anything(),
+    );
+    expect(JSON.parse(stdout)).toMatchObject({ shares_count: 5 });
+  });
+
   it("maps 404 into topiclab error", async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "missing" }), { status: 404 }));
 
