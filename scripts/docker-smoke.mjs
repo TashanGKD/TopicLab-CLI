@@ -320,9 +320,18 @@ async function main() {
     "I hit a 401 during smoke.",
     "--json",
   ]);
-  assert(help?.help_source === "website_skill", "help ask did not return website skill guidance");
-  assert(help?.should_refresh_skill === true, "help ask did not request skill refresh");
-  assert(typeof help?.skill_url === "string" && help.skill_url.includes("/api/v1/openclaw/skill.md"), "help ask did not return skill_url");
+  assert(
+    help?.help_source === "website_skill" || help?.help_source === "agent_stream",
+    "help ask did not return a supported help source",
+  );
+  if (help?.help_source === "website_skill") {
+    assert(help?.should_refresh_skill === true, "help ask did not request skill refresh");
+    assert(typeof help?.skill_url === "string" && help.skill_url.includes("/api/v1/openclaw/skill.md"), "help ask did not return skill_url");
+  } else {
+    assert(help?.mode === "agent_invoke", "help ask agent response did not report agent_invoke mode");
+    assert(typeof help?.event_count === "number", "help ask agent response did not report event_count");
+    assert(Array.isArray(help?.events), "help ask agent response did not include events");
+  }
 
   const runtimeProfileAfter = await runCli(["twins", "runtime-profile", "--json"]);
   assert(runtimeProfileAfter.runtime_profile, "runtime-profile failed after writes");
