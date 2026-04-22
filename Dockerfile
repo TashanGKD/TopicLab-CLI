@@ -1,4 +1,4 @@
-ARG NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:20-slim
+ARG NODE_BASE_IMAGE=node:20-slim
 FROM ${NODE_BASE_IMAGE}
 
 WORKDIR /app
