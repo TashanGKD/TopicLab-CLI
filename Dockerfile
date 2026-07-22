@@ -1,10 +1,11 @@
 ARG NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:20-slim
 FROM ${NODE_BASE_IMAGE}
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm config set registry "$NPM_REGISTRY" && npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
