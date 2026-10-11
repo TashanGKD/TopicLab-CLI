@@ -65,6 +65,23 @@ export class TopicLabHTTPClient {
     return headers;
   }
 
+  private async fetchWithReadRetry(url: string, init: RequestInit): Promise<Response> {
+    const attempts = (init.method || 'GET').toUpperCase() === 'GET' ? 3 : 1;
+    for (let attempt=0; attempt<attempts; attempt++) {
+      try {
+        const response=await fetch(url,{...init, signal:AbortSignal.timeout(30000),redirect:'error'});
+        if(![429,502,503,504].includes(response.status)||attempt===attempts-1) return response;
+        const wait=Math.min(2000,Math.max(0,Number(response.headers.get('Retry-After')||'0.2')*1000));
+        await response.arrayBuffer();
+        await new Promise(resolve=>setTimeout(resolve,Number.isFinite(wait)?wait:200));
+      } catch(error) {
+        if(attempt===attempts-1) throw error;
+        await new Promise(resolve=>setTimeout(resolve,200));
+      }
+    }
+    throw new Error('Read retry exhausted');
+  }
+
   async requestJson(
     method: string,
     requestPath: string,
@@ -83,7 +100,8 @@ export class TopicLabHTTPClient {
 
     let response: Response;
     try {
-      response = await fetch(this.buildUrl(requestPath, options.params), {
+      response = await this.fetchWithReadRetry(this.buildUrl(requestPath, options.params), {
+        signal: AbortSignal.timeout(30000),
         method: method.toUpperCase(),
         headers,
         body,
@@ -138,7 +156,8 @@ export class TopicLabHTTPClient {
 
     let response: Response;
     try {
-      response = await fetch(this.buildUrl(requestPath, options.params), {
+      response = await this.fetchWithReadRetry(this.buildUrl(requestPath, options.params), {
+        signal: AbortSignal.timeout(30000),
         method: method.toUpperCase(),
         headers: this.buildHeaders(options.headers),
         body: form,
@@ -162,7 +181,8 @@ export class TopicLabHTTPClient {
   ): Promise<{ buffer: Buffer; contentType: string | null }> {
     let response: Response;
     try {
-      response = await fetch(this.buildUrl(requestPath, options.params), {
+      response = await this.fetchWithReadRetry(this.buildUrl(requestPath, options.params), {
+        signal: AbortSignal.timeout(30000),
         method: "GET",
         headers: this.buildHeaders(options.headers),
       });
@@ -189,10 +209,10 @@ export class TopicLabHTTPClient {
           ? (parsed as Record<string, unknown>).detail
           : parsed ?? response.statusText;
       throw new TopicLabCLIError(`HTTP ${response.status} while calling TopicLab`, {
-        code: this.errorCodeForStatus(response.status),
+        code: detail && typeof detail === "object" && "code" in detail ? String((detail as Record<string,unknown>).code) : this.errorCodeForStatus(response.status),
         exitCode: 2,
         statusCode: response.status,
-        detail: detail === undefined ? undefined : String(detail),
+        detail: detail === undefined ? undefined : detail,
       });
     }
 
@@ -218,7 +238,8 @@ export class TopicLabHTTPClient {
 
     let response: Response;
     try {
-      response = await fetch(this.buildUrl(requestPath), {
+      response = await this.fetchWithReadRetry(this.buildUrl(requestPath), {
+        signal: AbortSignal.timeout(60000),
         method: "POST",
         headers: this.buildHeaders(),
         body: form,
@@ -269,10 +290,15 @@ export class TopicLabHTTPClient {
           ? (parsed as Record<string, unknown>).detail
           : parsed ?? response.statusText;
       throw new TopicLabCLIError(`HTTP ${response.status} while calling TopicLab`, {
-        code: this.errorCodeForStatus(response.status),
+        code: detail && typeof detail === "object" && "code" in detail ? String((detail as Record<string,unknown>).code) : this.errorCodeForStatus(response.status),
         exitCode: 2,
         statusCode: response.status,
         detail,
+        metadata: {
+          ...(response.headers.get('X-Request-ID') ? {request_id:response.headers.get('X-Request-ID')!} : {}),
+          ...(detail && typeof detail === 'object' && 'retryable' in detail ? {retryable:Boolean((detail as Record<string,unknown>).retryable)} : {}),
+          ...(response.headers.has('Retry-After') ? {retry_after_seconds:Number(response.headers.get('Retry-After'))} : {}),
+        },
       });
     }
 

@@ -5,6 +5,9 @@ export interface TopicLabCLIErrorPayload {
     message: string;
     status_code: number | null;
     detail: unknown;
+    request_id?: string;
+    retryable?: boolean;
+    retry_after_seconds?: number;
   };
 }
 
@@ -13,6 +16,7 @@ export class TopicLabCLIError extends Error {
   exitCode: number;
   statusCode: number | null;
   detail: unknown;
+  metadata: {request_id?:string;retryable?:boolean;retry_after_seconds?:number};
 
   constructor(
     message: string,
@@ -21,6 +25,7 @@ export class TopicLabCLIError extends Error {
       exitCode?: number;
       statusCode?: number | null;
       detail?: unknown;
+      metadata?: {request_id?:string;retryable?:boolean;retry_after_seconds?:number};
     } = {},
   ) {
     super(message);
@@ -29,6 +34,7 @@ export class TopicLabCLIError extends Error {
     this.exitCode = options.exitCode ?? 1;
     this.statusCode = options.statusCode ?? null;
     this.detail = options.detail ?? null;
+    this.metadata = options.metadata ?? {};
   }
 
   toPayload(): TopicLabCLIErrorPayload {
@@ -39,6 +45,7 @@ export class TopicLabCLIError extends Error {
         message: this.message,
         status_code: this.statusCode,
         detail: this.detail,
+        ...this.metadata,
       },
     };
   }

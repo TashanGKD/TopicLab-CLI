@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import { registerAgentCommands } from "./agentCommands.js";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
@@ -1220,6 +1221,9 @@ function buildProgram(session: SessionManager, store: StateStore): Command {
       process.exit(emit(merged, options.json ?? false));
     });
 
+  program.option('--operation-key <key>', 'Reuse this key when retrying a write after a lost response');
+  program.hook('preAction', () => { session.operationKey = program.opts().operationKey; });
+  registerAgentCommands(program, session, store, emit);
   return program;
 }
 

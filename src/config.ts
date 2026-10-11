@@ -12,6 +12,7 @@ export interface AskAgentState {
 }
 
 export interface CLIState {
+  task_claims?: Record<string, string>;
   base_url: string | null;
   bind_key: string | null;
   access_token: string | null;
@@ -73,7 +74,8 @@ export class StateStore {
 
   constructor(home?: string) {
     this.home = home ?? defaultHome();
-    fs.mkdirSync(this.home, { recursive: true });
+    fs.mkdirSync(this.home, { recursive: true, mode: 0o700 });
+    fs.chmodSync(this.home, 0o700);
     this.statePath = path.join(this.home, "state.json");
   }
 
@@ -83,6 +85,7 @@ export class StateStore {
         ...defaultState(),
         base_url: envBaseUrl(),
         bind_key: envBindKey(),
+        access_token: process.env.TOPICLAB_ACCESS_TOKEN?.trim() || null,
       };
     }
     const parsed = JSON.parse(fs.readFileSync(this.statePath, "utf8")) as Partial<CLIState>;
@@ -96,6 +99,7 @@ export class StateStore {
       // Packaged/internal runtimes may inject these as env overrides.
       base_url: envBaseUrl() ?? parsed.base_url ?? null,
       bind_key: envBindKey() ?? parsed.bind_key ?? null,
+      access_token: process.env.TOPICLAB_ACCESS_TOKEN?.trim() || parsed.access_token || null,
       openclaw_agent: parsed.openclaw_agent ?? {},
       ask_agent: {
         agent_url: parsedAskAgent.agent_url ?? null,
@@ -114,6 +118,9 @@ export class StateStore {
       ...state,
       last_refreshed_at: state.last_refreshed_at ?? new Date().toISOString(),
     };
-    fs.writeFileSync(this.statePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    const temporary = this.statePath + "." + process.pid + ".tmp";
+    fs.writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, {encoding:"utf8",mode:0o600});
+    fs.chmodSync(temporary,0o600);
+    fs.renameSync(temporary,this.statePath);
   }
 }

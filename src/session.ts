@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { CLIState, StateStore } from "./config.js";
 import { attachOpenClawDailyUpdateNotice, runDailyOpenClawUpdateCheck } from "./dailyUpdateCheck.js";
 import { TopicLabCLIError } from "./errors.js";
@@ -5,6 +6,7 @@ import { normalizeBaseUrl, TopicLabHTTPClient, TopicLabJSON } from "./http.js";
 
 export class SessionManager {
   store: StateStore;
+  operationKey?: string;
 
   constructor(store: StateStore = new StateStore()) {
     this.store = store;
@@ -120,7 +122,7 @@ export class SessionManager {
         exitCode: 6,
       });
     }
-    if (!state.bind_key) {
+    if (!state.bind_key && !state.access_token) {
       throw new TopicLabCLIError("Missing bind key. Run `topiclab session ensure --bind-key ...` first or set TOPICLAB_BIND_KEY.", {
         code: "missing_bind_key",
         exitCode: 6,
@@ -145,8 +147,10 @@ export class SessionManager {
     options: {
       params?: Record<string, unknown>;
       jsonBody?: Record<string, unknown>;
+      headers?: Record<string,string>;
     } = {},
   ): Promise<TopicLabJSON> {
+    if (method.toUpperCase() !== "GET") options = {...options, headers:{"Idempotency-Key":this.operationKey || randomUUID(),...options.headers}};
     try {
       const client = await this.authedClient();
       const payload = await client.requestJson(method, requestPath, options);
@@ -156,6 +160,8 @@ export class SessionManager {
         throw error;
       }
     }
+    if (!this.store.load().bind_key) throw new TopicLabCLIError("Credential expired or revoked; refresh it through its issuer or the user.", {code:"credential_refresh_required",statusCode:401});
+    if (!this.store.load().bind_key) throw new TopicLabCLIError("Credential refresh required", {code:"credential_refresh_required",statusCode:401});
     await this.ensureSession({ forceRenew: true });
     const client = await this.authedClient();
     const payload = await client.requestJson(method, requestPath, options);
@@ -181,6 +187,7 @@ export class SessionManager {
         throw error;
       }
     }
+    if (!this.store.load().bind_key) throw new TopicLabCLIError("Credential refresh required", {code:"credential_refresh_required",statusCode:401});
     await this.ensureSession({ forceRenew: true });
     const client = await this.authedClient();
     const payload = await client.requestForm(method, requestPath, options);
@@ -202,6 +209,7 @@ export class SessionManager {
         throw error;
       }
     }
+    if (!this.store.load().bind_key) throw new TopicLabCLIError("Credential refresh required", {code:"credential_refresh_required",statusCode:401});
     await this.ensureSession({ forceRenew: true });
     const client = await this.authedClient();
     return client.downloadBinary(requestPath, options);

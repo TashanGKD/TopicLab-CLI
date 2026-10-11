@@ -1,3 +1,13 @@
+## 0.5.0
+
+- Add general Agent credential and one-use invitation sessions.
+- Add assigned task claim, renewal, completion and failure commands with private proof storage.
+- Add World signals, evidence recall, prediction questions and voting commands.
+- Add research sources, AMiner paper search and recent literature commands.
+- Add discussion status, bounded waiting, cancellation and durable run result commands.
+- Add write operation keys, bounded read retries, request deadlines and structured error metadata.
+- Require Node.js 20 or later; retain legacy binding sessions.
+
 # Changelog
 
 ## Unreleased
