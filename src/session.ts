@@ -39,6 +39,11 @@ export class SessionManager {
         exitCode: 6,
       });
     }
+    if(!state.bind_key && state.access_token) {
+      const actor=await new TopicLabHTTPClient(state.base_url,state.access_token).requestJson('GET','/api/v1/agents/me') as Record<string,unknown>;
+      state.agent_uid=String(actor.agent_uid);this.store.save(state);
+      return {ok:true,base_url:state.base_url,agent_uid:state.agent_uid,scopes:actor.scopes,credential_type:actor.credential_type};
+    }
     if (!state.bind_key) {
       throw new TopicLabCLIError("Missing bind key. Provide --bind-key or set TOPICLAB_BIND_KEY.", {
         code: "missing_bind_key",

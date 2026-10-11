@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {randomBytes} from 'node:crypto';
 import { Command } from 'commander';
 import { SessionManager } from './session.js';
 import { StateStore } from './config.js';
@@ -23,7 +24,13 @@ export function registerAgentCommands(program: Command, session: SessionManager,
   for (const action of ['claim','renew','complete','fail']) {
     tasks.command(`${action} <task_id>`).option('--file <path>', 'Result or failure JSON').option('--json').action(async (id: string,o: Options) => {
       const state = store.load();
-      const token = state.task_claims?.[id];
+      let token = state.task_claims?.[id];
+      if(action === 'claim' && !token) {
+        token = randomBytes(32).toString('base64url');
+        state.task_claims = {...state.task_claims, [id]:token};
+        // Keep the proof before sending: a lost response must not lose claim ownership.
+        store.save(state);
+      }
       if (action !== 'claim' && !token) throw new TopicLabCLIError('No locally saved claim proof. Read the task and claim it before reporting.', {code:'missing_claim_proof'});
       const result = await session.requestWithAutoRenew('POST',`${idPath(id)}/${action}`,{jsonBody:{...bodyFile(o.file), ...(token ? {claim_token:token} : {})}}) as Record<string,unknown>;
       if (typeof result.claim_token === 'string') {

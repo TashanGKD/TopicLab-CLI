@@ -15,8 +15,9 @@ it('claim proof is private and is reused for completion',async()=>{
  const {program,session,store,output}=fixture();
  const call=vi.spyOn(session,'requestWithAutoRenew').mockResolvedValueOnce({task:{id:'task-one'},claim_token:'private-proof'}).mockResolvedValueOnce({task:{status:'replied'}});
  await program.parseAsync(['node','topiclab','tasks','claim','task-one','--json']);
+ expect(String(call.mock.calls[0][2]?.jsonBody?.claim_token).length).toBeGreaterThanOrEqual(24);
  expect(output[0].claim_token).toBeUndefined();expect(store.load().task_claims?.['task-one']).toBe('private-proof');
- const file=path.join(store.home,'result.json');fs.writeFileSync(file,JSON.stringify({summary:'Done'}));
+ const file=path.join(store.home,'result.json');fs.writeFileSync(file,JSON.stringify({summary:'Done',next_step:'Review the result'}));
  await program.parseAsync(['node','topiclab','tasks','complete','task-one','--file',file,'--json']);
  expect(call.mock.calls[1][2]?.jsonBody).toMatchObject({summary:'Done',claim_token:'private-proof'});
  expect(fs.statSync(store.statePath).mode&0o777).toBe(0o600);
